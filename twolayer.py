@@ -11,7 +11,7 @@ from pyspharm import Spharmt
 class TwoLayer(object):
 
     def __init__(self,sp,dt,theta1=280,theta2=310,grav=9.80616,omega=7.292e-5,cp=1004,\
-                 zmid=5.e3,ztop=15.e3,efold=3600,ndiss=8,tdrag=4,tdiab=20,umax=25,jetexp=2,hmax=2.e3):
+                 zmid=5.e3,ztop=15.e3,efold=3600,ndiss=8,tdrag=4,tdiab=20,umax=24,jetexp=2,hmax=2.e3):
         # setup model parameters
         self.theta1 = theta1 # lower layer pot. temp.
         self.theta2 = theta2 # upper layer pot. temp.
@@ -102,15 +102,13 @@ class TwoLayer(object):
         # horizontal vorticity flux
         tmpg1 = ug*(vrtg+self.f); tmpg2 = vg*(vrtg+self.f)
         # add lower layer drag contribution
-        if self.tdrag < 1.e10:
-            tmpg1[0,:,:] += vg[0,:,:]/self.tdrag
-            tmpg2[0,:,:] += -ug[0,:,:]/self.tdrag
+        tmpg1[0,:,:] += vg[0,:,:]/self.tdrag
+        tmpg2[0,:,:] += -ug[0,:,:]/self.tdrag
         # add diabatic momentum flux contribution
-        if self.tdiab < 1.e10:
-            tmpg1 += 0.5*(vg[1,:,:]-vg[0,:,:])[np.newaxis,:,:]*\
-            thtadot[np.newaxis,:,:]*totthk[np.newaxis,:,:]/(self.delth*lyrthkg)
-            tmpg2 += -0.5*(ug[1,:,:]-ug[0,:,:])[np.newaxis,:,:]*\
-            thtadot[np.newaxis,:,:]*totthk[np.newaxis,:,:]/(self.delth*lyrthkg)
+        tmpg1 += 0.5*(vg[1,:,:]-vg[0,:,:])[np.newaxis,:,:]*\
+        thtadot[np.newaxis,:,:]*totthk[np.newaxis,:,:]/(self.delth*lyrthkg)
+        tmpg2 += -0.5*(ug[1,:,:]-ug[0,:,:])[np.newaxis,:,:]*\
+        thtadot[np.newaxis,:,:]*totthk[np.newaxis,:,:]/(self.delth*lyrthkg)
         # compute vort flux contributions to vorticity and divergence tend.
         ddivdtspec, dvrtdtspec = self.sp.getvrtdivspec(tmpg1,tmpg2)
         dvrtdtspec *= -1
@@ -159,12 +157,12 @@ if __name__ == "__main__":
     import matplotlib.animation as animation
 
     # grid, time step info
-    nlons = 96  # number of longitudes
+    nlons = 128  # number of longitudes
     nlats = nlons//2
     ntrunc = nlons//3 # spectral truncation (for alias-free computations)
     #gridtype = 'regular'
     gridtype = 'gaussian'
-    dt = 1200 # time step in seconds
+    dt = 900 # time step in seconds
     itmax = 100*(86400/dt) # integration length in days
 
     # create spherical harmonic instance.
