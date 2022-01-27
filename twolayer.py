@@ -11,7 +11,7 @@ from pyspharm import Spharmt
 class TwoLayer(object):
 
     def __init__(self,sp,dt,theta1=280,theta2=310,grav=9.80616,omega=7.292e-5,cp=1004,\
-                 zmid=5.e3,ztop=15.e3,efold=3600,ndiss=8,tdrag=4,tdiab=20,umax=24,jetexp=2,hmax=2.e3):
+                 zmid=5.e3,ztop=15.e3,efold=3600,ndiss=8,tdrag=4,tdiab=20,umax=25,jetexp=2,hmax=2.e3):
         # setup model parameters
         self.theta1 = theta1 # lower layer pot. temp.
         self.theta2 = theta2 # upper layer pot. temp.
@@ -38,7 +38,8 @@ class TwoLayer(object):
         lons,lats = np.meshgrid(lons1d,sp.lats)
         self.lons = lons
         self.lats = lats
-        self.f = 2.*omega*np.sin(lats)[np.newaxis,:,:] # coriolis
+        mu = np.sin(lats)
+        self.f = 2.*omega*mu[np.newaxis,:,:] # coriolis
         # create laplacian operator and its inverse.
         indxn = sp.degree.astype(np.float)[np.newaxis,:]
         totwavenum = indxn*(indxn+1.0)
@@ -48,8 +49,6 @@ class TwoLayer(object):
         # hyperdiffusion operator
         self.hyperdiff = -(1./efold)*(totwavenum/totwavenum[0,-1])**(ndiss/2)
         # initialize orography
-        #self.orog = np.zeros((sp.nlats,sp.nlons),np.float)
-        mu = np.sin(lats)
         self.orog = 4.*hmax*(mu**2 - mu**4)*np.sin(2.*lons)
         # set equilibrium layer thicknes profile.
         self._interface_profile(umax,jetexp)
