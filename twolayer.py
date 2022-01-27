@@ -6,11 +6,12 @@ from pyspharm import Spharmt
 # 1993: An adjoint sensitivity study of blocking in a two-layer isentropic
 # model. Mon. Wea. Rev., 121, 2834-2857.
 # doi: http://dx.doi.org/10.1175/1520-0493(1993)121<2833:AASSOB>2.0.CO;2
+# see also https://journals.ametsoc.org/view/journals/mwre/133/11/mwr3020.1.xml
 
 class TwoLayer(object):
 
-    def __init__(self,sp,dt,theta1=300,theta2=330,grav=9.80616,omega=7.292e-5,cp=1004,\
-            zmid=5.e3,ztop=15.e3,efold=3600.,ndiss=8,tdrag=1.e30,tdiab=1.e30,umax=30,jetexp=4,hmax=0):
+    def __init__(self,sp,dt,theta1=280,theta2=310,grav=9.80616,omega=7.292e-5,cp=1004,\
+                 zmid=5.e3,ztop=15.e3,efold=3600,ndiss=8,tdrag=4,tdiab=20,umax=24,jetexp=2,hmax=2.e3):
         # setup model parameters
         self.theta1 = theta1 # lower layer pot. temp.
         self.theta2 = theta2 # upper layer pot. temp.
@@ -21,14 +22,16 @@ class TwoLayer(object):
         self.cp = cp # Specific Heat of Dry Air at Constant Pressure,
         self.zmid = zmid # resting depth of lower layer (m)
         self.ztop = ztop # resting depth of both layers (m)
+        self.umax = umax # equilibrium jet strength
+        self.jetexp = jetexp # equlibrium jet width parameter
         # efolding time scale for hyperdiffusion at shortest wavenumber
         self.efold = efold
         self.ndiss = ndiss # order of hyperdiffusion (2 for laplacian)
         self.sp = sp # Spharmt instance
         self.ntrunc = sp.ntrunc # triangular truncation wavenumber
         self.dt = dt # time step (secs)
-        self.tdiab = tdiab # lower layer drag timescale
-        self.tdrag = tdrag # interface relaxation timescale
+        self.tdiab = tdiab*86400. # lower layer drag timescale
+        self.tdrag = tdrag*86400. # interface relaxation timescale
         # create lat/lon arrays
         delta = 2.*np.pi/sp.nlons
         lons1d = np.arange(-np.pi,np.pi,delta)
@@ -155,8 +158,6 @@ if __name__ == "__main__":
     matplotlib.use('qt5agg')
     import matplotlib.pyplot as plt
     import matplotlib.animation as animation
-    from mpl_toolkits.basemap import Basemap, addcyclic
-    import time
 
     # grid, time step info
     nlons = 96  # number of longitudes
@@ -166,16 +167,13 @@ if __name__ == "__main__":
     gridtype = 'gaussian'
     dt = 1200 # time step in seconds
     itmax = 100*(86400/dt) # integration length in days
-    umax = 20. # jet speed
-    jetexp = 2 # parameter controlling jet width
 
     # create spherical harmonic instance.
     rsphere = 6.37122e6 # earth radius
     sp = Spharmt(nlons,nlats,ntrunc,rsphere,gridtype='gaussian')
 
     # create model instance using default parameters.
-    model =\
-    TwoLayer(sp,dt,umax=umax,jetexp=jetexp,tdiab=15.*86400,tdrag=5.*86400.,hmax=2000.)
+    model=TwoLayer(sp,dt)
 
     # vort, div initial conditions
     psipert = np.zeros((2,sp.nlats,sp.nlons),np.float)
@@ -183,7 +181,7 @@ if __name__ == "__main__":
     psipert = np.where(model.lons[np.newaxis,:,:] > 0., 0, psipert)
     ug = np.zeros((2,sp.nlats,sp.nlons),np.float)
     vg = np.zeros((2,sp.nlats,sp.nlons),np.float)
-    ug[1,:,:] = umax*np.sin(2.*model.lats)**jetexp
+    ug[1,:,:] = model.umax*np.sin(2.*model.lats)**model.jetexp
     vrtspec, divspec = sp.getvrtdivspec(ug,vg)
     vrtspec = vrtspec + model.lap*sp.grdtospec(psipert)
     vrtg = sp.spectogrd(vrtspec)
