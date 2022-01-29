@@ -11,7 +11,7 @@ from pyfft import Fouriert
 class TwoLayer(object):
 
     def __init__(self,ft,dt,theta1=280,theta2=310,grav=9.80616,f=1.e-4,cp=1004,\
-                 zmid=5.e3,ztop=15.e3,diff_efold=3600.,diff_order=8,tdrag=5,tdiab=15,umax=12,jetexp=2,hmax=2.e3):
+                 zmid=5.e3,ztop=15.e3,diff_efold=6*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12,jetexp=2,hmax=2.e3):
         # setup model parameters
         self.theta1 = np.array(theta1,np.float32) # lower layer pot. temp.
         self.theta2 = np.array(theta2,np.float32) # upper layer pot. temp.
@@ -28,16 +28,12 @@ class TwoLayer(object):
         self.tdiab = np.array(tdiab*86400.,np.float32) # lower layer drag timescale
         self.tdrag = np.array(tdrag*86400.,np.float32) # interface relaxation timescale
         self.f = np.array(f,np.float32)
-        # hyperdiffusion operator
+        # hyperdiffusion parameters
         self.diff_order = np.array(diff_order, np.float32)  # hyperdiffusion order
         self.diff_efold = np.array(diff_efold, np.float32)  # hyperdiff time scale
         ktot = np.sqrt(self.ft.ksqlsq)
         pi = np.array(np.pi,np.float32)  
         ktotcutoff = np.array(pi * N / self.ft.L, np.float32)
-        # hyperdiffusion operator
-        #self.hyperdiff = np.exp(
-        #    (-self.dt / self.diff_efold) * (ktot / ktotcutoff) ** self.diff_order
-        #)
         # integrating factor for hyperdiffusion
         self.hyperdiff = -(1./self.diff_efold)*(ktot/ktotcutoff)**self.diff_order
         # initialize orography
@@ -176,9 +172,6 @@ class TwoLayer(object):
         vrtspec += dt*(k1vrt+2.*k2vrt+2.*k3vrt+k4vrt)/6.
         divspec += dt*(k1div+2.*k2div+2.*k3div+k4div)/6.
         lyrthkspec += dt*(k1thk+2.*k2thk+2.*k3thk+k4thk)/6.
-        #vrtspec += dt*self.hyperdiff*(k1vrt+2.*k2vrt+2.*k3vrt+k4vrt)/6.
-        #divspec += dt*self.hyperdiff*(k1div+2.*k2div+2.*k3div+k4div)/6.
-        #lyrthkspec += dt*self.hyperdiff*(k1thk+2.*k2thk+2.*k3thk+k4thk)/6.
         self.t += dt
         return vrtspec,divspec,lyrthkspec
 
@@ -192,12 +185,12 @@ if __name__ == "__main__":
     N = 64
     L = 20000.e3
     dt = 480 # time step in seconds
-    itmax = 100*(86400/dt) # integration length in days
+    itmax = 500*86400 # integration length in days
 
     ft = Fouriert(N,L)
 
     # create model instance using default parameters.
-    model=TwoLayer(ft,dt,diff_efold=6*3600.,hmax=2000)
+    model=TwoLayer(ft,dt,diff_efold=12*3600.,hmax=2000)
 
     # vort, div initial conditions
     NN = 3*N//2
@@ -228,7 +221,7 @@ if __name__ == "__main__":
     vmin = -2.; vmax = 2.
     ax = fig.add_subplot(111); ax.axis('off')
     plt.tight_layout()
-    im=ax.imshow(pv[1],cmap=plt.cm.nipy_spectral,vmin=vmin,vmax=vmax,interpolation="nearest")
+    im=ax.imshow(pv[1],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")
     txt=ax.text(0.5,0.95,'Upper Layer PV day %10.2f' % float(model.t/86400.),\
                 ha='center',color='k',fontsize=18,transform=ax.transAxes)
 
