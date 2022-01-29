@@ -15,3 +15,5 @@
  very similar to the dry version of this
  [model](https://journals.ametsoc.org/view/journals/atsc/69/4/jas-d-11-0205.1.xml#bib32)
  (only difference is discretization of vertical momentum transport term).
+ See https://aip.scitation.org/doi/10.1063/1.3582356 for the original derivation
+ (pdf [here](https://www.lmd.ens.fr/glapeyre/papers/jlglvzfb2011.pdf)).
