@@ -44,10 +44,6 @@ class TwoLayer(object):
         self.x = x; self.y = y
         l = 2.*pi / self.ft.L
         self.orog = hmax*np.sin(l*y)*np.sin(l*x)
-        #import  matplotlib.pyplot as plt
-        #plt.imshow(self.orog)
-        #plt.show()
-        #raise SystemExit
         # set equilibrium layer thicknes profile.
         self._interface_profile(umax,jetexp)
         self.t = 0
@@ -57,16 +53,9 @@ class TwoLayer(object):
         vg = np.zeros((2,3*self.ft.N//2,3*self.ft.N//2),dtype=np.float32)
         l = np.array(2*np.pi,np.float32) / self.ft.L
         ug[1,:,:] = umax*np.sin(l*self.y)
-        #import  matplotlib.pyplot as plt
-        #plt.imshow(ug[1,:,:])
-        #plt.show()
-        #raise SystemExit
-        #print(ug.min(), ug.max())
         vrtspec, divspec = self.ft.getvrtdivspec(ug,vg)
         ug,vg = self.ft.getuv(vrtspec,divspec)
         self.uref = ug
-        #print(ug.min(), ug.max())
-        #raise SystemExit
         lyrthkspec = self.nlbalance(vrtspec)
         self.lyrthkref = self.ft.spectogrd(lyrthkspec)
         #import  matplotlib.pyplot as plt
@@ -90,16 +79,12 @@ class TwoLayer(object):
         divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         lyrthkspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         vrtg = self.ft.spectogrd(vrtspec)
-        #print(vrtg.min(), vrtg.max())
         ug,vg = self.ft.getuv(vrtspec,divspec)
-        #print(ug.min(), ug.max())
         tmpg1 = ug*(vrtg+self.f); tmpg2 = vg*(vrtg+self.f)
         tmpspec1, tmpspec2 = self.ft.getvrtdivspec(tmpg1,tmpg2)
         tmpspec2 = self.ft.grdtospec(0.5*(ug**2+vg**2))
         mspec = self.ft.invlap*tmpspec1 - tmpspec2
         mgrid = self.ft.spectogrd(mspec)
-        #for k in range(2):
-        #    print(mgrid[k].min(), mgrid[k].max())
         lyrthkspec[0,...] =\
         (mspec[0,...]-self.ft.grdtospec(self.grav*self.orog))/self.theta1
         lyrthkspec[1,...] = (mspec[1,:]-mspec[0,...])/self.delth
@@ -109,7 +94,6 @@ class TwoLayer(object):
         lyrthkg = self.ft.spectogrd(lyrthkspec)
         lyrthkg[0,...] = lyrthkg[0,...] - lyrthkg[0,...].mean() + self.ztop - self.zmid
         lyrthkg[1,...] = lyrthkg[1,...] - lyrthkg[1,...].mean() + self.zmid
-        #print(lyrthkg[0].min(),lyrthkg[1].max())
         lyrthkspec = self.ft.grdtospec(lyrthkg)
         return lyrthkspec
 
@@ -209,7 +193,6 @@ if __name__ == "__main__":
     lyrthkg = model.ft.spectogrd(lyrthkspec)
     ug,vg = model.ft.getuv(vrtspec,divspec)
     vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
-    #print(ug.min(), ug.max(), vg.min(), vg.max())
     if lyrthkg.min() < 0:
         raise ValueError('negative layer thickness! adjust jet parameters')
 
