@@ -10,4 +10,8 @@
 
  spherical and f-plane versions (spherical version depends on 
  [shtns](https://anaconda.org/conda-forge/shtns) and f-plane version 
- depends on [pyfftw](https://anaconda.org/conda-forge/pyfftw).
+ depends on [pyfftw](https://anaconda.org/conda-forge/pyfftw)).
+
+ very similar to the dry version of this
+ [model](https://journals.ametsoc.org/view/journals/atsc/69/4/jas-d-11-0205.1.xml#bib32)
+ (only difference is discretization of vertical momentum transport term).
