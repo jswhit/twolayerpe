@@ -37,9 +37,8 @@ class TwoLayer(object):
         # integrating factor for hyperdiffusion
         self.hyperdiff = -(1./self.diff_efold)*(ktot/ktotcutoff)**self.diff_order
         # initialize orography
-        NN = 3*self.ft.N//2
-        x = np.arange(0, self.ft.L, self.ft.L / NN, dtype=np.float32)
-        y = np.arange(0, self.ft.L, self.ft.L / NN, dtype=np.float32)
+        x = np.arange(0, self.ft.L, self.ft.L / self.ft.Nt, dtype=np.float32)
+        y = np.arange(0, self.ft.L, self.ft.L / self.ft.Nt, dtype=np.float32)
         x, y = np.meshgrid(x,y)
         self.x = x; self.y = y
         l = 2.*pi / self.ft.L
@@ -49,8 +48,8 @@ class TwoLayer(object):
         self.t = 0
 
     def _interface_profile(self,umax,jetexp):
-        ug = np.zeros((2,3*self.ft.N//2,3*self.ft.N//2),dtype=np.float32)
-        vg = np.zeros((2,3*self.ft.N//2,3*self.ft.N//2),dtype=np.float32)
+        ug = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
+        vg = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
         l = np.array(2*np.pi,np.float32) / self.ft.L
         ug[1,:,:] = umax*np.sin(l*self.y)
         vrtspec, divspec = self.ft.getvrtdivspec(ug,vg)
@@ -63,7 +62,7 @@ class TwoLayer(object):
         #plt.imshow(self.lyrthkref[1,:,:])
         #plt.colorbar()
         #plt.show()
-        #mstrm = np.empty((2,3*self.ft.N//2,3*self.ft.N//2),np.float32)
+        #mstrm = np.empty((2,self.ft.Nt,self.ft.Nt),np.float32)
         #mstrm[0,:,:] = self.grav*(self.orog + self.lyrthkref[0,:,:] + self.lyrthkref[1,:,:])
         #mstrm[1,:,:] = mstrm[0,:,:] +\
         #(self.grav*self.delth/self.theta1)*self.lyrthkref[1,:,:]
@@ -172,20 +171,19 @@ if __name__ == "__main__":
 
     # get OMP_NUM_THREADS (threads to use) from environment.
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
-    ft = Fouriert(N,L,threads=threads)
+    ft = Fouriert(N,L,threads=threads,dealias=True)
 
     # create model instance using default parameters.
     model=TwoLayer(ft,dt,diff_efold=12*3600.,hmax=2000)
 
     # vort, div initial conditions
-    NN = 3*N//2
     vref = np.zeros(model.uref.shape, model.uref.dtype)
     vrtspec, divspec = model.ft.getvrtdivspec(model.uref, vref)
     vrtg = model.ft.spectogrd(vrtspec)
-    vrtg += np.random.normal(0,1.e-5,size=(2,NN,NN)).astype(np.float32)
+    vrtg += np.random.normal(0,1.e-5,size=(2,ft.Nt,ft.Nt)).astype(np.float32)
     # add isolated blob to upper layer
     nexp = 20
-    x = np.arange(0,2.*np.pi,2.*np.pi/NN); y = np.arange(0.,2.*np.pi,2.*np.pi/NN)
+    x = np.arange(0,2.*np.pi,2.*np.pi/ft.Nt); y = np.arange(0.,2.*np.pi,2.*np.pi/ft.Nt)
     x,y = np.meshgrid(x,y)
     x = x.astype(np.float32); y = y.astype(np.float32)
     vrtg[1] = vrtg[1]+1.e-5*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)

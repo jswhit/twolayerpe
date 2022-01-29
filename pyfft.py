@@ -26,12 +26,16 @@ class Fouriert(object):
 
     Jeffrey S. Whitaker <jeffrey.s.whitaker@noaa.gov>
     """
-    def __init__(self,N,L,threads=1):
+    def __init__(self,N,L,threads=1,dealias=True):
         """initialize
         N: number of grid points (spectral truncation x 2)
         L: domain size"""
         self.N = N
-        self.NN = 3*N//2
+        if dealias:
+            self.Nt = 3*N//2
+        else:
+            self.Nt = N
+        self.dealias = dealias
         self.L = L
         self.threads = threads
         # spectral stuff
@@ -54,16 +58,22 @@ class Fouriert(object):
         self.invlap = np.where(ksqlsq > 0, 1./self.lap, 0.)
     def grdtospec(self,data):
         """compute spectral coefficients from gridded data"""
-        # spectral data is truncated to 2/3 size
+        # if dealias==True, spectral data is truncated to 2/3 size
         # size 2, self.N, self.N // 2 + 1
         dataspec = rfft2(data, threads=self.threads)
-        return self.spectrunc(rfft2(data, threads=self.threads))
+        if self.dealias: 
+            return self.spectrunc(rfft2(data, threads=self.threads))
+        else:
+            return rfft2(data, threads=self.threads)
     def spectogrd(self,dataspec):
         """compute gridded data from spectral coefficients"""
-        # data returned on 3/2 grid
+        # if dealias==True, data returned on 3/2 grid
         # dataspec padded with zeros to 2, 3 * self.N // 2, 3 * self.N // 4 + 1
         # data returned on 2, 3*self.N//2, 3*self.N//2
-        return irfft2(self.specpad(dataspec), threads=self.threads)
+        if self.dealias:
+            return irfft2(self.specpad(dataspec), threads=self.threads)
+        else:
+            return irfft2(dataspec, threads=self.threads)
     def getuv(self,vrtspec,divspec):
         """compute wind vector from spectral coeffs of vorticity and divergence"""
         psispec = self.invlap*vrtspec
