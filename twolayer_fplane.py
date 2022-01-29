@@ -138,7 +138,7 @@ class TwoLayer(object):
         # hyperdiffusion
         dvrtdtspec += self.hyperdiff*vrtspec
         ddivdtspec += self.hyperdiff*divspec
-        #dlyrthkdtspec += self.hyperdiff*lyrthkspec
+        #dlyrthkdtspec += self.hyperdiff*lyrthkspec # don't apply hyperdiff to mass continuity
         return dvrtdtspec,ddivdtspec,dlyrthkdtspec
 
     def rk4step(self,vrtspec,divspec,lyrthkspec):
