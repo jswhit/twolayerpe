@@ -111,14 +111,14 @@ class TwoLayer(object):
         tmpg1[0] += vg[0]/self.tdrag
         tmpg2[0] += -ug[0]/self.tdrag
         # add diabatic momentum flux contribution
-        #tmpg1 += 0.5*(vg[1,:,:]-vg[0,:,:])[np.newaxis,:,:]*\
-        #massflux/lyrthkg
-        #tmpg2 += -0.5*(ug[1,:,:]-ug[0,:,:])[np.newaxis,:,:]*\
-        #massflux/lyrthkg
+        # (this version averages vertical flux at top
+        # and bottom of each layer)
+        #tmpg1 += 0.5*(vg[1]-vg[0])*massflux/lyrthkg
+        #tmpg2 -= 0.5*(ug[1]-ug[0])*massflux/lyrthkg
         # if mc2RSW model (doi:10.1063/1.3582356)
         # diabatic mom flux term only affects upper layer (??)
-        tmpg1[1]+=(vg[1]-vg[0])*massflux/lyrthkg[1]
-        tmpg2[1]-=(ug[1]-ug[0])*massflux/lyrthkg[1]
+        #tmpg1[1] += (vg[1]-vg[0])*massflux/lyrthkg[1]
+        #tmpg2[1] -= (ug[1]-ug[0])*massflux/lyrthkg[1]
         # compute vort flux contributions to vorticity and divergence tend.
         ddivdtspec, dvrtdtspec = self.ft.getvrtdivspec(tmpg1,tmpg2)
         dvrtdtspec *= -1
