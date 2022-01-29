@@ -142,9 +142,8 @@ class TwoLayer(object):
         tmpspec, dlyrthkdtspec = self.ft.getvrtdivspec(tmpg1,tmpg2)
         dlyrthkdtspec *= -1
         # diabatic mass flux contribution to continuity
-        if self.tdiab < 1.e10:
-            tmpspec = self.ft.grdtospec(thtadot*totthk/self.delth)
-            dlyrthkdtspec[0,:] += -tmpspec; dlyrthkdtspec[1,:] += tmpspec
+        tmpspec = self.ft.grdtospec(thtadot*totthk/self.delth)
+        dlyrthkdtspec[0,:] += -tmpspec; dlyrthkdtspec[1,:] += tmpspec
         # pressure gradient force contribution to divergence tend (includes
         # orography).
         mstrm = np.empty(lyrthkg.shape, dtype=np.float32)
