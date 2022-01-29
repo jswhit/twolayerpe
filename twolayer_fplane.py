@@ -1,7 +1,7 @@
 import numpy as np
 from pyfft import Fouriert
 
-# two-layer baroclinic primitive equation model of
+# f-plane version of two-layer baroclinic primitive equation model from
 # Zou., X. A., A. Barcilon, I. M. Navon, J. S. Whitaker, and D. G. Cacuci,
 # 1993: An adjoint sensitivity study of blocking in a two-layer isentropic
 # model. Mon. Wea. Rev., 121, 2834-2857.
@@ -163,6 +163,7 @@ if __name__ == "__main__":
     matplotlib.use('qt5agg')
     import matplotlib.pyplot as plt
     import matplotlib.animation as animation
+    import os
 
     # grid, time step info
     N = 64
@@ -170,7 +171,9 @@ if __name__ == "__main__":
     dt = 480 # time step in seconds
     itmax = 500*86400 # integration length in days
 
-    ft = Fouriert(N,L)
+    # get OMP_NUM_THREADS (threads to use) from environment.
+    threads = int(os.getenv('OMP_NUM_THREADS','1'))
+    ft = Fouriert(N,L,threads=threads)
 
     # create model instance using default parameters.
     model=TwoLayer(ft,dt,diff_efold=12*3600.,hmax=2000)
