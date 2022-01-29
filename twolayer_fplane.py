@@ -168,8 +168,7 @@ if __name__ == "__main__":
     # grid, time step info
     N = 64
     L = 20000.e3
-    dt = 480 # time step in seconds
-    itmax = 500*86400 # integration length in days
+    dt = 450 # time step in seconds
 
     # get OMP_NUM_THREADS (threads to use) from environment.
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
@@ -212,6 +211,7 @@ if __name__ == "__main__":
 
     model.t = 0 # reset clock
     nout = int(3.*3600./model.dt) # plot interval
+    nsteps = int(500*86400./model.dt)//nout # number of time steps to animate
     def updatefig(*args):
         global vrtspec, divspec, lyrthkspec
         for n in range(nout):
@@ -222,6 +222,6 @@ if __name__ == "__main__":
         txt.set_text('Upper Layer PV day %10.2f' % float(model.t/86400.))
         return im,txt,
 
-    ani = animation.FuncAnimation(fig,updatefig,interval=0,blit=False)
+    ani = animation.FuncAnimation(fig,updatefig,interval=0,frames=nsteps,repeat=False,blit=True)
     plt.show()
 
