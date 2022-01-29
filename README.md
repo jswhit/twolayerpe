@@ -12,10 +12,4 @@
  [shtns](https://anaconda.org/conda-forge/shtns) and f-plane version 
  depends on [pyfftw](https://anaconda.org/conda-forge/pyfftw)).
 
- very similar to the dry version of this
- [model](https://journals.ametsoc.org/view/journals/atsc/69/4/jas-d-11-0205.1.xml#bib32)
- (only difference is discretization of vertical momentum transport term).
- See https://aip.scitation.org/doi/10.1063/1.3582356 for the original derivation
- (pdf [here](https://www.lmd.ens.fr/glapeyre/papers/jlglvzfb2011.pdf)).
-
- Three-layer version derived in https://doi.org/10.1002/qj.405.
+ identical to the 'improved' version of the mc2RSW model (DOI: 10.1002/qj.3292)
