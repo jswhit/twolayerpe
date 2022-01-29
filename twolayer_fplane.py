@@ -12,7 +12,7 @@ from pyfft import Fouriert
 class TwoLayer(object):
 
     def __init__(self,ft,dt,theta1=280,theta2=310,grav=9.80616,f=1.e-4,cp=1004,\
-                 zmid=5.e3,ztop=15.e3,diff_efold=6*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12,jetexp=2,hmax=2.e3):
+                 zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,tdrag=4,tdiab=20,umax=15,hmax=0.e3):
         # setup model parameters
         self.theta1 = np.array(theta1,np.float32) # lower layer pot. temp.
         self.theta2 = np.array(theta2,np.float32) # upper layer pot. temp.
@@ -23,7 +23,6 @@ class TwoLayer(object):
         self.zmid = np.array(zmid,np.float32) # resting depth of lower layer (m)
         self.ztop = np.array(ztop,np.float32) # resting depth of both layers (m)
         self.umax = np.array(umax,np.float32) # equilibrium jet strength
-        self.jetexp = jetexp # equlibrium jet width parameter
         self.ft = ft # Fouriert instance
         self.dt = np.array(dt,np.float32) # time step (secs)
         self.tdiab = np.array(tdiab*86400.,np.float32) # lower layer drag timescale
@@ -45,10 +44,10 @@ class TwoLayer(object):
         l = 2.*pi / self.ft.L
         self.orog = hmax*np.sin(l*y)*np.sin(l*x)
         # set equilibrium layer thicknes profile.
-        self._interface_profile(umax,jetexp)
+        self._interface_profile(umax)
         self.t = 0
 
-    def _interface_profile(self,umax,jetexp):
+    def _interface_profile(self,umax):
         ug = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
         vg = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
         l = np.array(2*np.pi,np.float32) / self.ft.L
@@ -175,19 +174,19 @@ if __name__ == "__main__":
     ft = Fouriert(N,L,threads=threads,dealias=True)
 
     # create model instance using default parameters.
-    model=TwoLayer(ft,dt,diff_efold=12*3600.,hmax=2000)
+    model=TwoLayer(ft,dt,diff_efold=12*3600.,hmax=0)
 
     # vort, div initial conditions
     vref = np.zeros(model.uref.shape, model.uref.dtype)
     vrtspec, divspec = model.ft.getvrtdivspec(model.uref, vref)
     vrtg = model.ft.spectogrd(vrtspec)
-    vrtg += np.random.normal(0,1.e-5,size=(2,ft.Nt,ft.Nt)).astype(np.float32)
+    vrtg += np.random.normal(0,1.e-6,size=(2,ft.Nt,ft.Nt)).astype(np.float32)
     # add isolated blob to upper layer
     nexp = 20
     x = np.arange(0,2.*np.pi,2.*np.pi/ft.Nt); y = np.arange(0.,2.*np.pi,2.*np.pi/ft.Nt)
     x,y = np.meshgrid(x,y)
     x = x.astype(np.float32); y = y.astype(np.float32)
-    vrtg[1] = vrtg[1]+1.e-5*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
+    vrtg[1] = vrtg[1]+1.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
     vrtspec = model.ft.grdtospec(vrtg)
     divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     lyrthkspec = model.nlbalance(vrtspec)
@@ -201,7 +200,7 @@ if __name__ == "__main__":
     fig = plt.figure(figsize=(16,8))
     vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec, lyrthkspec)
     pv = (0.5*model.zmid/model.f)*(model.vrt + model.f)/model.lyrthk
-    vmin = -2.; vmax = 2.
+    vmin = -2.4; vmax = 2.4
     ax = fig.add_subplot(111); ax.axis('off')
     plt.tight_layout()
     im=ax.imshow(pv[1],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")
