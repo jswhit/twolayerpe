@@ -7,6 +7,7 @@ from pyfft import Fouriert
 # model. Mon. Wea. Rev., 121, 2834-2857.
 # doi: http://dx.doi.org/10.1175/1520-0493(1993)121<2833:AASSOB>2.0.CO;2
 # see also https://journals.ametsoc.org/view/journals/mwre/133/11/mwr3020.1.xml
+# same as dry version of mc2RSW model of Lambaerts 2011 (doi:10.1063/1.3582356)
 
 class TwoLayer(object):
 
@@ -51,21 +52,20 @@ class TwoLayer(object):
         ug = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
         vg = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
         l = np.array(2*np.pi,np.float32) / self.ft.L
-        ug[1,:,:] = umax*np.sin(l*self.y)
+        ug[1] = umax*np.sin(l*self.y)
         vrtspec, divspec = self.ft.getvrtdivspec(ug,vg)
         ug,vg = self.ft.getuv(vrtspec,divspec)
         self.uref = ug
         lyrthkspec = self.nlbalance(vrtspec)
         self.lyrthkref = self.ft.spectogrd(lyrthkspec)
         #import  matplotlib.pyplot as plt
-        #print(self.lyrthkref[1,:,:].min(),self.lyrthkref[1,:,:].max())
-        #plt.imshow(self.lyrthkref[1,:,:])
+        #print(self.lyrthkref[1].min(),self.lyrthkref[1].max())
+        #plt.imshow(self.lyrthkref[1)
         #plt.colorbar()
         #plt.show()
         #mstrm = np.empty((2,self.ft.Nt,self.ft.Nt),np.float32)
-        #mstrm[0,:,:] = self.grav*(self.orog + self.lyrthkref[0,:,:] + self.lyrthkref[1,:,:])
-        #mstrm[1,:,:] = mstrm[0,:,:] +\
-        #(self.grav*self.delth/self.theta1)*self.lyrthkref[1,:,:]
+        #mstrm[0] = self.grav*(self.orog + self.lyrthkref[0] + self.lyrthkref[1])
+        #mstrm[1]=mstrm[0]+(self.grav*self.delth/self.theta1)*self.lyrthkref[1]
         #mx, my = self.ft.getgrad(self.ft.grdtospec(mstrm))
         #u=-my/self.f
         #print(u.min(),u.max())
@@ -104,19 +104,21 @@ class TwoLayer(object):
         lyrthkg = self.ft.spectogrd(lyrthkspec)
         self.u = ug; self.v = vg
         self.vrt = vrtg; self.lyrthk = lyrthkg
-        totthk = lyrthkg.sum(axis=0)
-        thtadot = self.delth*(self.lyrthkref[1,:,:] - lyrthkg[1,:,:])/\
-                             (self.tdiab*totthk)
+        massflux = (self.lyrthkref[1] - lyrthkg[1])/self.tdiab
         # horizontal vorticity flux
         tmpg1 = ug*(vrtg+self.f); tmpg2 = vg*(vrtg+self.f)
         # add lower layer drag contribution
-        tmpg1[0,:,:] += vg[0,:,:]/self.tdrag
-        tmpg2[0,:,:] += -ug[0,:,:]/self.tdrag
+        tmpg1[0] += vg[0]/self.tdrag
+        tmpg2[0] += -ug[0]/self.tdrag
         # add diabatic momentum flux contribution
-        tmpg1 += 0.5*(vg[1,:,:]-vg[0,:,:])[np.newaxis,:,:]*\
-        thtadot[np.newaxis,:,:]*totthk[np.newaxis,:,:]/(self.delth*lyrthkg)
-        tmpg2 += -0.5*(ug[1,:,:]-ug[0,:,:])[np.newaxis,:,:]*\
-        thtadot[np.newaxis,:,:]*totthk[np.newaxis,:,:]/(self.delth*lyrthkg)
+        #tmpg1 += 0.5*(vg[1,:,:]-vg[0,:,:])[np.newaxis,:,:]*\
+        #massflux/lyrthkg
+        #tmpg2 += -0.5*(ug[1,:,:]-ug[0,:,:])[np.newaxis,:,:]*\
+        #massflux/lyrthkg
+        # if mc2RSW model (doi:10.1063/1.3582356)
+        # diabatic mom flux term only affects upper layer (??)
+        tmpg1[1]+=(vg[1]-vg[0])*massflux/lyrthkg[1]
+        tmpg2[1]-=(ug[1]-ug[0])*massflux/lyrthkg[1]
         # compute vort flux contributions to vorticity and divergence tend.
         ddivdtspec, dvrtdtspec = self.ft.getvrtdivspec(tmpg1,tmpg2)
         dvrtdtspec *= -1
@@ -125,19 +127,17 @@ class TwoLayer(object):
         tmpspec, dlyrthkdtspec = self.ft.getvrtdivspec(tmpg1,tmpg2)
         dlyrthkdtspec *= -1
         # diabatic mass flux contribution to continuity
-        tmpspec = self.ft.grdtospec(thtadot*totthk/self.delth)
-        dlyrthkdtspec[0,:] += -tmpspec; dlyrthkdtspec[1,:] += tmpspec
+        tmpspec = self.ft.grdtospec(massflux)
+        dlyrthkdtspec[0] -= tmpspec; dlyrthkdtspec[1] += tmpspec
         # pressure gradient force contribution to divergence tend (includes
         # orography).
         mstrm = np.empty(lyrthkg.shape, dtype=np.float32)
-        mstrm[0,:,:] = self.grav*(self.orog + lyrthkg[0,:,:] + lyrthkg[1,:,:])
-        mstrm[1,:,:] = mstrm[0,:,:] +\
-        (self.grav*self.delth/self.theta1)*lyrthkg[1,:,:]
+        mstrm[0] = self.grav*(self.orog + lyrthkg[0] + lyrthkg[1])
+        mstrm[1] = mstrm[0] + (self.grav*self.delth/self.theta1)*lyrthkg[1]
         ddivdtspec += -self.ft.lap*self.ft.grdtospec(mstrm+0.5*(ug**2+vg**2))
-        # hyperdiffusion
+        # hyperdiffusion of vorticity and divergence
         dvrtdtspec += self.hyperdiff*vrtspec
         ddivdtspec += self.hyperdiff*divspec
-        #dlyrthkdtspec += self.hyperdiff*lyrthkspec # don't apply hyperdiff to mass continuity
         return dvrtdtspec,ddivdtspec,dlyrthkdtspec
 
     def rk4step(self,vrtspec,divspec,lyrthkspec):

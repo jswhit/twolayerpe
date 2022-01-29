@@ -17,3 +17,5 @@
  (only difference is discretization of vertical momentum transport term).
  See https://aip.scitation.org/doi/10.1063/1.3582356 for the original derivation
  (pdf [here](https://www.lmd.ens.fr/glapeyre/papers/jlglvzfb2011.pdf)).
+
+ Three-layer version derived in https://doi.org/10.1002/qj.405.
