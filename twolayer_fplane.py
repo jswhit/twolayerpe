@@ -11,19 +11,14 @@ from pyfft import Fouriert
 
 class TwoLayer(object):
 
-    def __init__(self,ft,dt,theta1=300,theta2=330,f=1.e-4,moist=False,\
-                 zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12,hmax=0.e3):
+    def __init__(self,ft,dt,theta1=300,theta2=330,f=1.e-4,\
+                 zmid=5.e3,ztop=10.e3,diff_efold=12*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12.5,hmax=0.e3):
         # setup model parameters
         self.theta1 = np.array(theta1,np.float32) # lower layer pot. temp.
         self.theta2 = np.array(theta2,np.float32) # upper layer pot. temp.
         self.delth = np.array(theta2-theta1,np.float32) # difference in potential temp between layers
         self.hmax = np.array(hmax,np.float32) # orographic amplitude
         self.grav = 9.80616 # gravity
-        self.cp = 1004.# Specific Heat of Dry Air at Constant Pressure,
-        self.rgas = 287
-        self.p0 = 1.e5
-        self.moist = moist
-        self.lheat = 2.5e6
         self.zmid = np.array(zmid,np.float32) # resting depth of lower layer (m)
         self.ztop = np.array(ztop,np.float32) # resting depth of both layers (m)
         self.umax = np.array(umax,np.float32) # equilibrium jet strength
@@ -99,15 +94,6 @@ class TwoLayer(object):
         lyrthkspec = self.ft.grdtospec(lyrthkg)
         return lyrthkspec
 
-    def getqsat(self,lyrthkg):
-        zmid = self.ztop - lyrthkg[1]
-        zsfc = self.ztop - (lyrthkg[1]+lyrthkg[0])
-        exner = 1.-0.5*self.grav*(zsfc+zmid)/(self.cp*self.theta1)
-        temp = self.theta1*exner - 273.15
-        press = self.p0*exner**(self.cp/self.rgas)
-        pressvap = 610.94*np.exp(17.625*temp/(temp+273.86)) #improved Magnua
-        return 0.622*pressvap/press
-
     def gettend(self,vrtspec,divspec,lyrthkspec):
         # compute tendencies.
         # first, transform fields from spectral space to grid space.
@@ -116,18 +102,8 @@ class TwoLayer(object):
         lyrthkg = self.ft.spectogrd(lyrthkspec)
         self.u = ug; self.v = vg
         self.vrt = vrtg; self.lyrthk = lyrthkg
-        #import  matplotlib.pyplot as plt
-        #print(qsat.min(),qsat.max())
-        #plt.imshow(qsat)
-        #plt.colorbar()
-        #plt.show()
-        #raise SystemExit
+        # diabatic mass flux due to interface relaxation.
         massflux = (self.lyrthkref[1] - lyrthkg[1])/self.tdiab
-        if self.moist:
-            qsat = self.getqsat(lyrthkg)
-            divg = self.ft.spectogrd(divspec[0])
-            totthk = lyrthkg.sum(axis=0)
-            massflux += self.lheat*qsat*totthk*divg/(self.delth*self.cp)
         # horizontal vorticity flux
         tmpg1 = ug*(vrtg+self.f); tmpg2 = vg*(vrtg+self.f)
         # add lower layer drag contribution
@@ -139,10 +115,6 @@ class TwoLayer(object):
         # same as 'improved' mc2RSW model (DOI: 10.1002/qj.3292)
         tmpg1 += 0.5*(vg[1]-vg[0])*massflux/lyrthkg
         tmpg2 -= 0.5*(ug[1]-ug[0])*massflux/lyrthkg
-        # if mc2RSW model (doi:10.1063/1.3582356)
-        # diabatic mom flux term only affects upper layer (??)
-        #tmpg1[1] += (vg[1]-vg[0])*massflux/lyrthkg[1]
-        #tmpg2[1] -= (ug[1]-ug[0])*massflux/lyrthkg[1]
         # compute vort flux contributions to vorticity and divergence tend.
         ddivdtspec, dvrtdtspec = self.ft.getvrtdivspec(tmpg1,tmpg2)
         dvrtdtspec *= -1
@@ -191,14 +163,14 @@ if __name__ == "__main__":
     # grid, time step info
     N = 64
     L = 20000.e3
-    dt = 450 # time step in seconds
+    dt = 600 # time step in seconds
 
     # get OMP_NUM_THREADS (threads to use) from environment.
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
     ft = Fouriert(N,L,threads=threads,dealias=True)
 
     # create model instance using default parameters.
-    model=TwoLayer(ft,dt,diff_efold=12*3600.,hmax=0)
+    model=TwoLayer(ft,dt,diff_efold=12*3600.,hmax=2000)
 
     # vort, div initial conditions
     vref = np.zeros(model.uref.shape, model.uref.dtype)
@@ -221,29 +193,36 @@ if __name__ == "__main__":
         raise ValueError('negative layer thickness! adjust jet parameters')
 
     # animate pv
-    nlevout = 0
     fig = plt.figure(figsize=(16,8))
     vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec, lyrthkspec)
     pv = (0.5*model.zmid/model.f)*(model.vrt + model.f)/model.lyrthk
-    vmin = -2.4; vmax = 2.4
-    ax = fig.add_subplot(111); ax.axis('off')
+    vmin1 = 0; vmax1 = 2.0
+    vmin2 = 0; vmax2 = 2.0
+    ax = fig.add_subplot(121); ax.axis('off')
     plt.tight_layout()
-    im=ax.imshow(pv[nlevout],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")
-    txt=ax.text(0.5,0.95,'Upper Layer PV day %10.2f' % float(model.t/86400.),\
+    im1=ax.imshow(pv[0],cmap=plt.cm.jet,vmin=vmin1,vmax=vmax1,interpolation="nearest")
+    txt1=ax.text(0.5,0.95,'Lower Layer PV day %10.2f' % float(model.t/86400.),\
+                ha='center',color='k',fontsize=18,transform=ax.transAxes)
+    ax = fig.add_subplot(122); ax.axis('off')
+    plt.tight_layout()
+    im2=ax.imshow(pv[1],cmap=plt.cm.jet,vmin=vmin2,vmax=vmax2,interpolation="nearest")
+    txt2=ax.text(0.5,0.95,'Upper Layer PV day %10.2f' % float(model.t/86400.),\
                 ha='center',color='k',fontsize=18,transform=ax.transAxes)
 
     model.t = 0 # reset clock
     nout = int(3.*3600./model.dt) # plot interval
-    nsteps = int(500*86400./model.dt)//nout # number of time steps to animate
+    nsteps = int(150*86400./model.dt)//nout # number of time steps to animate
     def updatefig(*args):
         global vrtspec, divspec, lyrthkspec
         for n in range(nout):
             vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec,\
                     lyrthkspec)
         pv = (0.5*model.zmid/model.f)*(model.vrt + model.f)/model.lyrthk
-        im.set_data(pv[nlevout])
-        txt.set_text('Upper Layer PV day %10.2f' % float(model.t/86400.))
-        return im,txt,
+        im1.set_data(pv[0])
+        txt1.set_text('Lower Layer PV day %10.2f' % float(model.t/86400.))
+        im2.set_data(pv[1])
+        txt2.set_text('Upper Layer PV day %10.2f' % float(model.t/86400.))
+        return im1,txt1,im2,txt2,
 
     ani = animation.FuncAnimation(fig,updatefig,interval=0,frames=nsteps,repeat=False,blit=True)
     plt.show()

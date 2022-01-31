@@ -2,10 +2,13 @@ from __future__ import print_function
 import numpy as np
 
 try:  # pyfftw is *much* faster
-    from pyfftw.interfaces import numpy_fft, cache
 
-    # print('# using pyfftw...')
-    cache.enable()
+    try: # first try to use mkl_fft
+        import mkl_fft._numpy_fft as numpy_fft
+        print('# using mkl_fft...')
+    except ImportError: # if not available, fall back on pyfftw
+        from pyfftw.interfaces import numpy_fft
+        print('# using pyfftw...')
     rfft2 = numpy_fft.rfft2
     irfft2 = numpy_fft.irfft2
 except ImportError:  # fall back on numpy fft.
@@ -60,20 +63,27 @@ class Fouriert(object):
         """compute spectral coefficients from gridded data"""
         # if dealias==True, spectral data is truncated to 2/3 size
         # size 2, self.N, self.N // 2 + 1
-        dataspec = rfft2(data, threads=self.threads)
+        try:
+            dataspec = rfft2(data, threads=self.threads)
+        except: # mkl_fft does not have threads kwarg (uses env var MKL_NUM_THREADS)
+            dataspec = rfft2(data)
         if self.dealias: 
-            return self.spectrunc(rfft2(data, threads=self.threads))
+            return self.spectrunc(dataspec)
         else:
-            return rfft2(data, threads=self.threads)
+            return dataspec
     def spectogrd(self,dataspec):
         """compute gridded data from spectral coefficients"""
         # if dealias==True, data returned on 3/2 grid
         # dataspec padded with zeros to 2, 3 * self.N // 2, 3 * self.N // 4 + 1
         # data returned on 2, 3*self.N//2, 3*self.N//2
         if self.dealias:
-            return irfft2(self.specpad(dataspec), threads=self.threads)
+            dataspec_tmp = self.specpad(dataspec)
         else:
-            return irfft2(dataspec, threads=self.threads)
+            dataspec_tmp = dataspec
+        try:
+            return irfft2(dataspec_tmp, threads=self.threads)
+        except: # mkl_fft does not have threads kwarg (uses env var MKL_NUM_THREADS)
+            return irfft2(dataspec_tmp)
     def getuv(self,vrtspec,divspec):
         """compute wind vector from spectral coeffs of vorticity and divergence"""
         psispec = self.invlap*vrtspec
