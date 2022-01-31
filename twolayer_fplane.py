@@ -207,9 +207,8 @@ if __name__ == "__main__":
     txt2=ax.text(0.5,0.95,'Upper Layer PV day %10.2f' % float(model.t/86400.),\
                 ha='center',color='k',fontsize=18,transform=ax.transAxes)
 
-    model.t = 0 # reset clock
     nout = int(3.*3600./model.dt) # plot interval
-    nsteps = int(150*86400./model.dt)//nout # number of time steps to animate
+    nsteps = int(100*86400./model.dt)//nout # number of time steps to animate
     def updatefig(*args):
         global vrtspec, divspec, lyrthkspec
         for n in range(nout):
@@ -222,6 +221,6 @@ if __name__ == "__main__":
         txt2.set_text('Upper Layer PV day %10.2f' % float(model.t/86400.))
         return im1,txt1,im2,txt2,
 
-    ani = animation.FuncAnimation(fig,updatefig,interval=0,frames=nsteps,repeat=False,blit=True)
+    ani = animation.FuncAnimation(fig,updatefig,interval=0,frames=nsteps-2,repeat=False,blit=True)
     plt.show()
 
