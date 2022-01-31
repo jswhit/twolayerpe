@@ -30,7 +30,7 @@ class TwoLayer(object):
         self.diff_efold = np.array(diff_efold, np.float32)  # hyperdiff time scale
         ktot = np.sqrt(self.ft.ksqlsq)
         pi = np.array(np.pi,np.float32)  
-        ktotcutoff = np.array(pi * N / self.ft.L, np.float32)
+        ktotcutoff = np.array(pi * self.ft.N / self.ft.L, np.float32)
         # integrating factor for hyperdiffusion
         self.hyperdiff = -(1./self.diff_efold)*(ktot/ktotcutoff)**self.diff_order
         # initialize orography
@@ -43,6 +43,7 @@ class TwoLayer(object):
         # set equilibrium layer thicknes profile.
         self._interface_profile(umax)
         self.t = 0.
+        self.timesteps = 1
 
     def _interface_profile(self,umax):
         ug = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
@@ -148,6 +149,11 @@ class TwoLayer(object):
         lyrthkspec += dt*(k1thk+2.*k2thk+2.*k3thk+k4thk)/6.
         self.t += dt
         return vrtspec,divspec,lyrthkspec
+    def advance(self, vrtspec, divspec, lyrthkspec):
+        # advance forward number of timesteps given by 'timesteps' instance var.
+        for n in range(self.timesteps):
+            vrtspec, divspec, lyrthkspec = self.rk4step(vrtspec,divspec,lyrthkspec)
+        return vrtspec, divspec, lyrthkspec
 
 if __name__ == "__main__":
     import matplotlib
