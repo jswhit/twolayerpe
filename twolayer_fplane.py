@@ -42,7 +42,7 @@ class TwoLayer(object):
         self.orog = hmax*np.sin(l*y)*np.sin(l*x)
         # set equilibrium layer thicknes profile.
         self._interface_profile(umax)
-        self.t = 0
+        self.t = 0.
 
     def _interface_profile(self,umax):
         ug = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
@@ -98,8 +98,6 @@ class TwoLayer(object):
         vrtg = self.ft.spectogrd(vrtspec)
         ug,vg = self.ft.getuv(vrtspec,divspec)
         lyrthkg = self.ft.spectogrd(lyrthkspec)
-        self.u = ug; self.v = vg
-        self.vrt = vrtg; self.lyrthk = lyrthkg
         # diabatic mass flux due to interface relaxation.
         massflux = (self.lyrthkref[1] - lyrthkg[1])/self.tdiab
         # horizontal vorticity flux
@@ -167,8 +165,8 @@ if __name__ == "__main__":
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
     ft = Fouriert(N,L,threads=threads,dealias=True)
 
-    # create model instance using default parameters.
-    model=TwoLayer(ft,dt,diff_efold=12*3600.,hmax=2000)
+    # create model instance, override default parameters.
+    model=TwoLayer(ft,dt,hmax=2000)
 
     # vort, div initial conditions
     vref = np.zeros(model.uref.shape, model.uref.dtype)
@@ -190,37 +188,43 @@ if __name__ == "__main__":
     if lyrthkg.min() < 0:
         raise ValueError('negative layer thickness! adjust jet parameters')
 
-    # animate pv
+    # run model, animate pv
+    nout = int(3.*3600./model.dt) # plot interval
+    nsteps = int(100*86400./model.dt)//nout-2 # number of time steps to animate
+
     fig = plt.figure(figsize=(16,8))
     vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec, lyrthkspec)
-    pv = (0.5*model.zmid/model.f)*(model.vrt + model.f)/model.lyrthk
-    vmin1 = 0; vmax1 = 2.0
-    vmin2 = 0; vmax2 = 2.0
+    vrtg = model.ft.spectogrd(vrtspec)
+    lyrthkg = model.ft.spectogrd(lyrthkspec)
+    pv = (0.5*model.zmid/model.f)*(vrtg + model.f)/lyrthkg
+    vmin = 0; vmax = 2.0
     ax = fig.add_subplot(121); ax.axis('off')
     plt.tight_layout()
-    im1=ax.imshow(pv[0],cmap=plt.cm.jet,vmin=vmin1,vmax=vmax1,interpolation="nearest")
-    txt1=ax.text(0.5,0.95,'Lower Layer PV day %10.2f' % float(model.t/86400.),\
+    im1=ax.imshow(pv[0],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")
+    td = model.t/86400.
+    txt1=ax.text(0.5,0.95,'Lower Layer PV day %6.3f' % td,\
                 ha='center',color='w',fontsize=18,transform=ax.transAxes)
     ax = fig.add_subplot(122); ax.axis('off')
     plt.tight_layout()
-    im2=ax.imshow(pv[1],cmap=plt.cm.jet,vmin=vmin2,vmax=vmax2,interpolation="nearest")
-    txt2=ax.text(0.5,0.95,'Upper Layer PV day %10.2f' % float(model.t/86400.),\
+    im2=ax.imshow(pv[1],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")
+    txt2=ax.text(0.5,0.95,'Upper Layer PV day %6.3f' % td,\
                 ha='center',color='w',fontsize=18,transform=ax.transAxes)
 
-    nout = int(3.*3600./model.dt) # plot interval
-    nsteps = int(150*86400./model.dt)//nout # number of time steps to animate
     def updatefig(*args):
         global vrtspec, divspec, lyrthkspec
         for n in range(nout):
             vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec,\
                     lyrthkspec)
-        pv = (0.5*model.zmid/model.f)*(model.vrt + model.f)/model.lyrthk
+        vrtg = model.ft.spectogrd(vrtspec)
+        lyrthkg = model.ft.spectogrd(lyrthkspec)
+        pv = (0.5*model.zmid/model.f)*(vrtg + model.f)/lyrthkg
+        td = (model.t-model.dt)/86400.
         im1.set_data(pv[0])
-        txt1.set_text('Lower Layer PV day %10.2f' % float(model.t/86400.))
+        txt1.set_text('Lower Layer PV day %7.3f' % td)
         im2.set_data(pv[1])
-        txt2.set_text('Upper Layer PV day %10.2f' % float(model.t/86400.))
+        txt2.set_text('Upper Layer PV day %7.3f' % td)
         return im1,txt1,im2,txt2,
 
-    ani = animation.FuncAnimation(fig,updatefig,interval=0,frames=nsteps-2,repeat=False,blit=True)
+    ani = animation.FuncAnimation(fig,updatefig,interval=0,frames=nsteps,repeat=False,blit=True)
     plt.show()
 
