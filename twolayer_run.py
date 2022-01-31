@@ -42,8 +42,8 @@ vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
 if lyrthkg.min() < 0:
     raise ValueError('negative layer thickness! adjust jet parameters')
 
-#savedata = 'twolayerp_N%s_3hrly.nc' % N # save data plotted in a netcdf file.
-savedata = None # don't save data
+savedata = 'twolayerp_N%s_3hrly.nc' % N # save data plotted in a netcdf file.
+#savedata = None # don't save data
 
 if savedata is not None:
     from netCDF4 import Dataset
@@ -86,7 +86,7 @@ if savedata is not None:
     yvar[:] = model.y[:,0]
     zvar[0] = model.theta1; zvar[1] = model.theta2
 
-t = 0.
+t = 0.; nout = 0
 t1 = time.perf_counter()
 while t < tmax:
     vrtspec, divspec, lyrthkspec = model.advance(vrtspec, divspec, lyrthkspec)
@@ -94,8 +94,8 @@ while t < tmax:
     th = t/3600.
     print('t = %g hours' % th)
     if savedata is not None and t >= tmin:
-        ug, vg = model.getuv(vrtspec, divspec)
-        zg = model.spectogrd(lyrthkspec)
+        ug, vg = model.ft.getuv(vrtspec, divspec)
+        zg = model.ft.spectogrd(lyrthkspec)
         uvar[nout,:,:,:] = ug
         vvar[nout,:,:,:] = vg
         dzvar[nout,:,:,:] = lyrthkg
