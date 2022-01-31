@@ -50,8 +50,13 @@ if savedata is not None:
     nc = Dataset(savedata, mode='w', format='NETCDF4_CLASSIC')
     nc.theta1 = model.theta1
     nc.theta2 = model.theta2
+    nc.delth = model.delth
+    nc.grav = model.grav
     nc.umax = model.umax
-    nc.hmax = model.umax
+    nc.hmax = model.hmax
+    nc.ztop = model.ztop
+    nc.zmid = model.zmid
+    nc.f = model.f
     nc.L = model.ft.L
     nc.Nt = model.ft.Nt
     nc.N = model.ft.N
@@ -105,3 +110,4 @@ while t < tmax:
         nout = nout + 1
 t2 = time.perf_counter()
 print('total time = ',t2-t1)
+if savedata: nc.close()
