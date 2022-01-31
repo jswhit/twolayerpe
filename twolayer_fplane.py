@@ -200,15 +200,15 @@ if __name__ == "__main__":
     plt.tight_layout()
     im1=ax.imshow(pv[0],cmap=plt.cm.jet,vmin=vmin1,vmax=vmax1,interpolation="nearest")
     txt1=ax.text(0.5,0.95,'Lower Layer PV day %10.2f' % float(model.t/86400.),\
-                ha='center',color='k',fontsize=18,transform=ax.transAxes)
+                ha='center',color='w',fontsize=18,transform=ax.transAxes)
     ax = fig.add_subplot(122); ax.axis('off')
     plt.tight_layout()
     im2=ax.imshow(pv[1],cmap=plt.cm.jet,vmin=vmin2,vmax=vmax2,interpolation="nearest")
     txt2=ax.text(0.5,0.95,'Upper Layer PV day %10.2f' % float(model.t/86400.),\
-                ha='center',color='k',fontsize=18,transform=ax.transAxes)
+                ha='center',color='w',fontsize=18,transform=ax.transAxes)
 
     nout = int(3.*3600./model.dt) # plot interval
-    nsteps = int(100*86400./model.dt)//nout # number of time steps to animate
+    nsteps = int(150*86400./model.dt)//nout # number of time steps to animate
     def updatefig(*args):
         global vrtspec, divspec, lyrthkspec
         for n in range(nout):
