@@ -103,12 +103,9 @@ class TwoLayer(object):
         zmid = self.ztop - lyrthkg[1]
         zsfc = self.ztop - (lyrthkg[1]+lyrthkg[0])
         exner = 1.-0.5*self.grav*(zsfc+zmid)/(self.cp*self.theta1)
-        #exner = 1.-self.grav*zsfc/(self.cp*self.theta1)
         temp = self.theta1*exner - 273.15
         press = self.p0*exner**(self.cp/self.rgas)
-        #print(temp.min(),temp.max(),press.min(),press.max())
         pressvap = 610.94*np.exp(17.625*temp/(temp+273.86)) #improved Magnua
-        #print(pressvap.min(),pressvap.max())
         return 0.622*pressvap/press
 
     def gettend(self,vrtspec,divspec,lyrthkspec):
@@ -224,13 +221,14 @@ if __name__ == "__main__":
         raise ValueError('negative layer thickness! adjust jet parameters')
 
     # animate pv
+    nlevout = 0
     fig = plt.figure(figsize=(16,8))
     vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec, lyrthkspec)
     pv = (0.5*model.zmid/model.f)*(model.vrt + model.f)/model.lyrthk
     vmin = -2.4; vmax = 2.4
     ax = fig.add_subplot(111); ax.axis('off')
     plt.tight_layout()
-    im=ax.imshow(pv[1],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")
+    im=ax.imshow(pv[nlevout],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")
     txt=ax.text(0.5,0.95,'Upper Layer PV day %10.2f' % float(model.t/86400.),\
                 ha='center',color='k',fontsize=18,transform=ax.transAxes)
 
@@ -243,7 +241,7 @@ if __name__ == "__main__":
             vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec,\
                     lyrthkspec)
         pv = (0.5*model.zmid/model.f)*(model.vrt + model.f)/model.lyrthk
-        im.set_data(pv[1])
+        im.set_data(pv[nlevout])
         txt.set_text('Upper Layer PV day %10.2f' % float(model.t/86400.))
         return im,txt,
 
