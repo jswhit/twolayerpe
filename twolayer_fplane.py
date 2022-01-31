@@ -11,15 +11,19 @@ from pyfft import Fouriert
 
 class TwoLayer(object):
 
-    def __init__(self,ft,dt,theta1=280,theta2=310,grav=9.80616,f=1.e-4,cp=1004,\
-                 zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,tdrag=4,tdiab=20,umax=15,hmax=0.e3):
+    def __init__(self,ft,dt,theta1=300,theta2=330,f=1.e-4,moist=False,\
+                 zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12,hmax=0.e3):
         # setup model parameters
         self.theta1 = np.array(theta1,np.float32) # lower layer pot. temp.
         self.theta2 = np.array(theta2,np.float32) # upper layer pot. temp.
         self.delth = np.array(theta2-theta1,np.float32) # difference in potential temp between layers
-        self.grav = np.array(grav,np.float32) # gravity
         self.hmax = np.array(hmax,np.float32) # orographic amplitude
-        self.cp = np.array(cp,np.float32) # Specific Heat of Dry Air at Constant Pressure,
+        self.grav = 9.80616 # gravity
+        self.cp = 1004.# Specific Heat of Dry Air at Constant Pressure,
+        self.rgas = 287
+        self.p0 = 1.e5
+        self.moist = moist
+        self.lheat = 2.5e6
         self.zmid = np.array(zmid,np.float32) # resting depth of lower layer (m)
         self.ztop = np.array(ztop,np.float32) # resting depth of both layers (m)
         self.umax = np.array(umax,np.float32) # equilibrium jet strength
@@ -95,6 +99,18 @@ class TwoLayer(object):
         lyrthkspec = self.ft.grdtospec(lyrthkg)
         return lyrthkspec
 
+    def getqsat(self,lyrthkg):
+        zmid = self.ztop - lyrthkg[1]
+        zsfc = self.ztop - (lyrthkg[1]+lyrthkg[0])
+        exner = 1.-0.5*self.grav*(zsfc+zmid)/(self.cp*self.theta1)
+        #exner = 1.-self.grav*zsfc/(self.cp*self.theta1)
+        temp = self.theta1*exner - 273.15
+        press = self.p0*exner**(self.cp/self.rgas)
+        #print(temp.min(),temp.max(),press.min(),press.max())
+        pressvap = 610.94*np.exp(17.625*temp/(temp+273.86)) #improved Magnua
+        #print(pressvap.min(),pressvap.max())
+        return 0.622*pressvap/press
+
     def gettend(self,vrtspec,divspec,lyrthkspec):
         # compute tendencies.
         # first, transform fields from spectral space to grid space.
@@ -103,7 +119,18 @@ class TwoLayer(object):
         lyrthkg = self.ft.spectogrd(lyrthkspec)
         self.u = ug; self.v = vg
         self.vrt = vrtg; self.lyrthk = lyrthkg
+        #import  matplotlib.pyplot as plt
+        #print(qsat.min(),qsat.max())
+        #plt.imshow(qsat)
+        #plt.colorbar()
+        #plt.show()
+        #raise SystemExit
         massflux = (self.lyrthkref[1] - lyrthkg[1])/self.tdiab
+        if self.moist:
+            qsat = self.getqsat(lyrthkg)
+            divg = self.ft.spectogrd(divspec[0])
+            totthk = lyrthkg.sum(axis=0)
+            massflux += self.lheat*qsat*totthk*divg/(self.delth*self.cp)
         # horizontal vorticity flux
         tmpg1 = ug*(vrtg+self.f); tmpg2 = vg*(vrtg+self.f)
         # add lower layer drag contribution

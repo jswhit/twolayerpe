@@ -95,20 +95,38 @@ class Fouriert(object):
         # pad spectral arrays with zeros to get
         # interpolation to 3/2 larger grid using inverse fft.
         # take care of normalization factor for inverse transform.
-        specarr_pad = np.zeros((2, 3 * self.N // 2, 3 * self.N // 4 + 1), specarr.dtype)
-        specarr_pad[:, 0 : self.N // 2, 0 : self.N // 2] = (
-            specarr[:, 0 : self.N // 2, 0 : self.N // 2]
-        )
-        specarr_pad[:, -self.N // 2 :, 0 : self.N // 2] = (
-            specarr[:, -self.N // 2 :, 0 : self.N // 2]
-        )
-        # include negative Nyquist frequency.
-        specarr_pad[:, 0 : self.N // 2, self.N // 2] = np.conjugate(
-            specarr[:, 0 : self.N // 2, -1]
-        )
-        specarr_pad[:, -self.N // 2 :, self.N // 2] = np.conjugate(
-            specarr[:, -self.N // 2 :, -1]
-        )
+        if specarr.ndim == 3:
+            specarr_pad = np.zeros((2, self.Nt, self.Nt// 2 + 1), specarr.dtype)
+            specarr_pad[:, 0 : self.N // 2, 0 : self.N // 2] = (
+                specarr[:, 0 : self.N // 2, 0 : self.N // 2]
+            )
+            specarr_pad[:, -self.N // 2 :, 0 : self.N // 2] = (
+                specarr[:, -self.N // 2 :, 0 : self.N // 2]
+            )
+            # include negative Nyquist frequency.
+            specarr_pad[:, 0 : self.N // 2, self.N // 2] = np.conjugate(
+                specarr[:, 0 : self.N // 2, -1]
+            )
+            specarr_pad[:, -self.N // 2 :, self.N // 2] = np.conjugate(
+                specarr[:, -self.N // 2 :, -1]
+            )
+        elif specarr.ndim==2:
+            specarr_pad = np.zeros((self.Nt, self.Nt// 2 + 1), specarr.dtype)
+            specarr_pad[0 : self.N // 2, 0 : self.N // 2] = (
+                specarr[0 : self.N // 2, 0 : self.N // 2]
+            )
+            specarr_pad[-self.N // 2 :, 0 : self.N // 2] = (
+                specarr[-self.N // 2 :, 0 : self.N // 2]
+            )
+            # include negative Nyquist frequency.
+            specarr_pad[0 : self.N // 2, self.N // 2] = np.conjugate(
+                specarr[0 : self.N // 2, -1]
+            )
+            specarr_pad[-self.N // 2 :, self.N // 2] = np.conjugate(
+                specarr[-self.N // 2 :, -1]
+            )
+        else:
+            raise IndexError('specarr must be 2d or 3d')
         return 2.25*specarr_pad
     def spectrunc(self, specarr):
         # truncate spectral array using 2/3 rule.
