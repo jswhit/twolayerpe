@@ -1,5 +1,5 @@
 from pyfft import Fouriert
-from twolayer_fplane import TwoLayer
+from twolayer import TwoLayer
 import numpy as np
 import os, time
 
