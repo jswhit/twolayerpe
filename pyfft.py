@@ -2,9 +2,10 @@ from __future__ import print_function
 import numpy as np
 
 try:  # pyfftw is *much* faster
-    from pyfftw.interfaces import numpy_fft
+    from pyfftw.interfaces import numpy_fft, cache
     rfft2 = numpy_fft.rfft2
     irfft2 = numpy_fft.irfft2
+    cache.enable()
 except ImportError:  # fall back on numpy fft.
     print("# WARNING: using numpy fft (install mkl_fft or pyfftw for better performance)...")
 
