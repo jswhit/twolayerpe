@@ -2,13 +2,7 @@ from __future__ import print_function
 import numpy as np
 
 try:  # pyfftw is *much* faster
-
-    try: # first try to use mkl_fft
-        import mkl_fft._numpy_fft as numpy_fft
-        print('# using mkl_fft...')
-    except ImportError: # if not available, fall back on pyfftw
-        from pyfftw.interfaces import numpy_fft
-        print('# using pyfftw...')
+    from pyfftw.interfaces import numpy_fft
     rfft2 = numpy_fft.rfft2
     irfft2 = numpy_fft.irfft2
 except ImportError:  # fall back on numpy fft.
@@ -63,10 +57,7 @@ class Fouriert(object):
         """compute spectral coefficients from gridded data"""
         # if dealias==True, spectral data is truncated to 2/3 size
         # size 2, self.N, self.N // 2 + 1
-        try:
-            dataspec = rfft2(data, threads=self.threads)
-        except: # mkl_fft does not have threads kwarg (uses env var MKL_NUM_THREADS)
-            dataspec = rfft2(data)
+        dataspec = rfft2(data, threads=self.threads)
         if self.dealias: 
             return self.spectrunc(dataspec)
         else:
@@ -80,10 +71,7 @@ class Fouriert(object):
             dataspec_tmp = self.specpad(dataspec)
         else:
             dataspec_tmp = dataspec
-        try:
-            return irfft2(dataspec_tmp, threads=self.threads)
-        except: # mkl_fft does not have threads kwarg (uses env var MKL_NUM_THREADS)
-            return irfft2(dataspec_tmp)
+        return irfft2(dataspec_tmp, threads=self.threads)
     def getuv(self,vrtspec,divspec):
         """compute wind vector from spectral coeffs of vorticity and divergence"""
         psispec = self.invlap*vrtspec
