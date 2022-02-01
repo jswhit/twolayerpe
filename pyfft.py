@@ -17,6 +17,7 @@ class Fouriert(object):
         self.threads = threads
         self.N = N
         self.Nt = 3*N//2
+        # set up pyfftw objects for transforms
         self.rfft2=pyfftw.builders.rfft2(pyfftw.empty_aligned((2,self.Nt,self.Nt), dtype='float32'),\
                                           axes=(-2, -1), threads=threads)
         self.irfft2=pyfftw.builders.irfft2(pyfftw.empty_aligned((2,self.Nt,self.Nt//2+1), dtype='complex64'),\
@@ -54,7 +55,7 @@ class Fouriert(object):
             data =  self.irfft2_2d(dataspec_tmp)
         else:
             data =  self.irfft2(dataspec_tmp)
-        return np.copy(data)
+        return np.array(data,copy=True)
     def getuv(self,vrtspec,divspec):
         """compute wind vector from spectral coeffs of vorticity and divergence"""
         psispec = self.invlap*vrtspec
