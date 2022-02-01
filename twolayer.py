@@ -50,6 +50,7 @@ class TwoLayer(object):
         vg = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
         l = np.array(2*np.pi,np.float32) / self.ft.L
         ug[1] = umax*np.sin(l*self.y)
+        uspec = self.ft.grdtospec(ug)
         vrtspec, divspec = self.ft.getvrtdivspec(ug,vg)
         ug,vg = self.ft.getuv(vrtspec,divspec)
         self.uref = ug
@@ -57,7 +58,7 @@ class TwoLayer(object):
         self.lyrthkref = self.ft.spectogrd(lyrthkspec)
         #import  matplotlib.pyplot as plt
         #print(self.lyrthkref[1].min(),self.lyrthkref[1].max())
-        #plt.imshow(self.lyrthkref[1)
+        #plt.imshow(self.lyrthkref[1])
         #plt.colorbar()
         #plt.show()
         #mstrm = np.empty((2,self.ft.Nt,self.ft.Nt),np.float32)
@@ -163,16 +164,16 @@ if __name__ == "__main__":
     import os
 
     # grid, time step info
-    N = 64  
+    N = 64
     L = 20000.e3
     dt = 600 # time step in seconds
 
     # get OMP_NUM_THREADS (threads to use) from environment.
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
-    ft = Fouriert(N,L,threads=threads,dealias=True)
+    ft = Fouriert(N,L,threads=threads)
 
     # create model instance, override default parameters.
-    model=TwoLayer(ft,dt,hmax=2000,diff_efold=6.*3600.)
+    model=TwoLayer(ft,dt,hmax=2000)
 
     # vort, div initial conditions
     vref = np.zeros(model.uref.shape, model.uref.dtype)
@@ -196,7 +197,7 @@ if __name__ == "__main__":
 
     # run model, animate pv
     nout = int(3.*3600./model.dt) # plot interval
-    nsteps = int(150*86400./model.dt)//nout-2 # number of time steps to animate
+    nsteps = int(100*86400./model.dt)//nout-2 # number of time steps to animate
 
     fig = plt.figure(figsize=(16,8))
     vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec, lyrthkspec)

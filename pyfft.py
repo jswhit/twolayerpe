@@ -1,21 +1,5 @@
-from __future__ import print_function
 import numpy as np
-
-try:  # pyfftw is *much* faster
-    from pyfftw.interfaces import numpy_fft, cache
-    rfft2 = numpy_fft.rfft2
-    irfft2 = numpy_fft.irfft2
-    cache.enable()
-except ImportError:  # fall back on numpy fft.
-    print("# WARNING: using numpy fft (pyfftw for better performance)...")
-
-    def rfft2(*args, **kwargs):
-        kwargs.pop("threads", None)
-        return np.fft.rfft2(*args, **kwargs)
-
-    def irfft2(*args, **kwargs):
-        kwargs.pop("threads", None)
-        return np.fft.irfft2(*args, **kwargs)
+import pyfftw
 
 class Fouriert(object):
     """
@@ -24,64 +8,60 @@ class Fouriert(object):
 
     Jeffrey S. Whitaker <jeffrey.s.whitaker@noaa.gov>
     """
-    def __init__(self,N,L,threads=1,dealias=True):
+    def __init__(self,N,L,threads=1):
         """initialize
         N: number of grid points (spectral truncation x 2)
         L: domain size"""
-        self.dealias = dealias
         self.L = L
         self.threads = threads
         self.N = N
-        if dealias:
-            self.Nt = 3*N//2
-        else:
-            self.Nt = N
+        self.Nt = 3*N//2
+        # set up pyfftw objects for transforms
+        self.rfft2=pyfftw.builders.rfft2(pyfftw.empty_aligned((2,self.Nt,self.Nt), dtype='float32'),\
+                                          axes=(-2, -1), threads=threads)
+        self.irfft2=pyfftw.builders.irfft2(pyfftw.empty_aligned((2,self.Nt,self.Nt//2+1), dtype='complex64'),\
+                                          axes=(-2, -1), threads=threads)
+        self.rfft2_2d=pyfftw.builders.rfft2(pyfftw.empty_aligned((self.Nt,self.Nt), dtype='float32'),\
+                                          axes=(-2, -1), threads=threads)
+        self.irfft2_2d=pyfftw.builders.irfft2(pyfftw.empty_aligned((self.Nt,self.Nt//2+1), dtype='complex64'),\
+                                          axes=(-2, -1), threads=threads)
         # spectral stuff
-        k = (N * np.fft.fftfreq(N))[0 : (N // 2) + 1]
-        l = N * np.fft.fftfreq(N)
+        dk = 2.*np.pi/self.L
+        k =  dk*np.arange(0.,self.N//2+1)
+        l =  dk*np.append( np.arange(0.,self.N//2),np.arange(-self.N//2,0.) )
         k, l = np.meshgrid(k, l)
-        # dimensionalize wavenumbers.
-        k = 2.0 * np.pi * k / self.L
-        l = 2.0 * np.pi * l / self.L
-        k = k.astype(np.float32)
-        l = l.astype(np.float32)
-        self.k = k; self.l = l
-        self.ksqlsq = k ** 2 + l ** 2
+        self.k = k.astype(np.float32)
+        self.l = l.astype(np.float32)
+        ksqlsq = self.k ** 2 + self.l ** 2
+        self.ksqlsq = ksqlsq
         self.ik = (1.0j * k).astype(np.complex64)
         self.il = (1.0j * l).astype(np.complex64)
-        self.lap = -self.ksqlsq.astype(np.complex64)
+        self.lap = -ksqlsq.astype(np.complex64)
         lapnonzero = self.lap != 0.
         self.invlap = np.zeros_like(self.lap)
         self.invlap[lapnonzero] = 1./self.lap[lapnonzero]
-        #self.invlap = np.where(ksqlsq > 0, 1./self.lap, 0.)
     def grdtospec(self,data):
         """compute spectral coefficients from gridded data"""
-        # if dealias==True, spectral data is truncated to 2/3 size
-        # size 2, self.N, self.N // 2 + 1
-        dataspec = rfft2(data, threads=self.threads)
-        if self.dealias: 
-            return self.spectrunc(dataspec)
+        if data.ndim==2:
+            dataspec = self.rfft2_2d(data)
         else:
-            return dataspec
+            dataspec = self.rfft2(data)
+        return self.spectrunc(dataspec)
     def spectogrd(self,dataspec):
         """compute gridded data from spectral coefficients"""
-        # if dealias==True, data returned on 3/2 grid
-        # dataspec padded with zeros to 2, 3 * self.N // 2, 3 * self.N // 4 + 1
-        # data returned on 2, 3*self.N//2, 3*self.N//2
-        if self.dealias:
-            dataspec_tmp = self.specpad(dataspec)
+        dataspec_tmp = self.specpad(dataspec)
+        if dataspec_tmp.ndim==2:
+            data =  self.irfft2_2d(dataspec_tmp)
         else:
-            dataspec_tmp = dataspec
-        return irfft2(dataspec_tmp, threads=self.threads)
+            data =  self.irfft2(dataspec_tmp)
+        return np.array(data,copy=True)
     def getuv(self,vrtspec,divspec):
         """compute wind vector from spectral coeffs of vorticity and divergence"""
         psispec = self.invlap*vrtspec
         chispec = self.invlap*divspec
-        psix, psiy = self.getgrad(psispec)
-        chix, chiy = self.getgrad(chispec)
-        u = -psiy + chix
-        v = psix + chiy
-        return u,v
+        uspec = -self.il*psispec + self.ik*chispec
+        vspec = self.ik*psispec + self.il*chispec
+        return self.spectogrd(uspec), self.spectogrd(vspec)
     def getvrtdivspec(self,u,v):
         """compute spectral coeffs of vorticity and divergence from wind vector"""
         uspec = self.grdtospec(u); vspec = self.grdtospec(v)
