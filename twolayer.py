@@ -56,18 +56,6 @@ class TwoLayer(object):
         self.uref = ug
         lyrthkspec = self.nlbalance(vrtspec)
         self.lyrthkref = self.ft.spectogrd(lyrthkspec)
-        #import  matplotlib.pyplot as plt
-        #print(self.lyrthkref[1].min(),self.lyrthkref[1].max())
-        #plt.imshow(self.lyrthkref[1])
-        #plt.colorbar()
-        #plt.show()
-        #mstrm = np.empty((2,self.ft.Nt,self.ft.Nt),np.float32)
-        #mstrm[0] = self.grav*(self.orog + self.lyrthkref[0] + self.lyrthkref[1])
-        #mstrm[1]=mstrm[0]+(self.grav*self.delth/self.theta1)*self.lyrthkref[1]
-        #mx, my = self.ft.getgrad(self.ft.grdtospec(mstrm))
-        #u=-my/self.f
-        #print(u.min(),u.max())
-        #raise SystemExit
         if self.lyrthkref.min() < 0:
             raise ValueError('negative layer thickness! adjust equilibrium jet parameter')
 
