@@ -28,32 +28,32 @@ class Fouriert(object):
         """initialize
         N: number of grid points (spectral truncation x 2)
         L: domain size"""
+        self.dealias = dealias
+        self.L = L
+        self.threads = threads
         self.N = N
         if dealias:
             self.Nt = 3*N//2
         else:
             self.Nt = N
-        self.dealias = dealias
-        self.L = L
-        self.threads = threads
         # spectral stuff
         k = (N * np.fft.fftfreq(N))[0 : (N // 2) + 1]
         l = N * np.fft.fftfreq(N)
         k, l = np.meshgrid(k, l)
+        # dimensionalize wavenumbers.
+        k = 2.0 * np.pi * k / self.L
+        l = 2.0 * np.pi * l / self.L
         k = k.astype(np.float32)
         l = l.astype(np.float32)
-        # dimensionalize wavenumbers.
-        pi = np.array(np.pi, np.float32)
-        k = 2.0 * pi * k / self.L
-        l = 2.0 * pi * l / self.L
-        ksqlsq = k ** 2 + l ** 2
-        self.k = k
-        self.l = l
-        self.ksqlsq = ksqlsq
+        self.k = k; self.l = l
+        self.ksqlsq = k ** 2 + l ** 2
         self.ik = (1.0j * k).astype(np.complex64)
         self.il = (1.0j * l).astype(np.complex64)
-        self.lap = -ksqlsq.astype(np.complex64)
-        self.invlap = np.where(ksqlsq > 0, 1./self.lap, 0.)
+        self.lap = -self.ksqlsq.astype(np.complex64)
+        lapnonzero = self.lap != 0.
+        self.invlap = np.zeros_like(self.lap)
+        self.invlap[lapnonzero] = 1./self.lap[lapnonzero]
+        #self.invlap = np.where(ksqlsq > 0, 1./self.lap, 0.)
     def grdtospec(self,data):
         """compute spectral coefficients from gridded data"""
         # if dealias==True, spectral data is truncated to 2/3 size
