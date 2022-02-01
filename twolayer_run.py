@@ -1,5 +1,5 @@
 from pyfft import Fouriert
-from twolayer_fplane import TwoLayer
+from twolayer import TwoLayer
 import numpy as np
 import os, time
 
@@ -42,8 +42,8 @@ vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
 if lyrthkg.min() < 0:
     raise ValueError('negative layer thickness! adjust jet parameters')
 
-savedata = 'twolayerp_N%s_3hrly.nc' % N # save data plotted in a netcdf file.
-#savedata = None # don't save data
+#savedata = 'twolayerp_N%s_3hrly.nc' % N # save data plotted in a netcdf file.
+savedata = None # don't save data
 
 if savedata is not None:
     from netCDF4 import Dataset
