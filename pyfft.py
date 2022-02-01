@@ -7,7 +7,7 @@ try:  # pyfftw is *much* faster
     irfft2 = numpy_fft.irfft2
     cache.enable()
 except ImportError:  # fall back on numpy fft.
-    print("# WARNING: using numpy fft (install mkl_fft or pyfftw for better performance)...")
+    print("# WARNING: using numpy fft (pyfftw for better performance)...")
 
     def rfft2(*args, **kwargs):
         kwargs.pop("threads", None)

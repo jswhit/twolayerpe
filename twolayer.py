@@ -5,7 +5,7 @@ from pyfft import Fouriert
 # same as dry version of mc2RSW model of Lambaerts 2011 (doi:10.1063/1.3582356)
 
 # run on command line to generate an animation.  
-# needs mkl_fft or pyfftw and matplotlib with qt5agg backend for animation.
+# needs pyfftw and matplotlib with qt5agg backend for animation.
 
 class TwoLayer(object):
 
@@ -163,28 +163,28 @@ if __name__ == "__main__":
     import os
 
     # grid, time step info
-    N = 64
+    N = 128 
     L = 20000.e3
-    dt = 600 # time step in seconds
+    dt = 300 # time step in seconds
 
     # get OMP_NUM_THREADS (threads to use) from environment.
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
     ft = Fouriert(N,L,threads=threads,dealias=True)
 
     # create model instance, override default parameters.
-    model=TwoLayer(ft,dt,hmax=2000)
+    model=TwoLayer(ft,dt,hmax=2000,diff_efold=6.*3600.)
 
     # vort, div initial conditions
     vref = np.zeros(model.uref.shape, model.uref.dtype)
     vrtspec, divspec = model.ft.getvrtdivspec(model.uref, vref)
     vrtg = model.ft.spectogrd(vrtspec)
-    vrtg += np.random.normal(0,1.e-6,size=(2,ft.Nt,ft.Nt)).astype(np.float32)
+    vrtg += np.random.normal(0,2.e-6,size=(2,ft.Nt,ft.Nt)).astype(np.float32)
     # add isolated blob to upper layer
     nexp = 20
     x = np.arange(0,2.*np.pi,2.*np.pi/ft.Nt); y = np.arange(0.,2.*np.pi,2.*np.pi/ft.Nt)
     x,y = np.meshgrid(x,y)
     x = x.astype(np.float32); y = y.astype(np.float32)
-    vrtg[1] = vrtg[1]+1.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
+    vrtg[1] = vrtg[1]+2.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
     vrtspec = model.ft.grdtospec(vrtg)
     divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     lyrthkspec = model.nlbalance(vrtspec)
@@ -196,7 +196,7 @@ if __name__ == "__main__":
 
     # run model, animate pv
     nout = int(3.*3600./model.dt) # plot interval
-    nsteps = int(100*86400./model.dt)//nout-2 # number of time steps to animate
+    nsteps = int(150*86400./model.dt)//nout-2 # number of time steps to animate
 
     fig = plt.figure(figsize=(16,8))
     vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec, lyrthkspec)
