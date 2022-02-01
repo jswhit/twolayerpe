@@ -5,7 +5,7 @@ from pyfft import Fouriert
 # same as dry version of mc2RSW model of Lambaerts 2011 (doi:10.1063/1.3582356)
 
 # run on command line to generate an animation.  
-# needs mkl_fft or pyfftw and matplotlib with qt5agg backend.,
+# needs mkl_fft or pyfftw and matplotlib with qt5agg backend for animation.
 
 class TwoLayer(object):
 
@@ -124,7 +124,7 @@ class TwoLayer(object):
         dlyrthkdtspec[0] -= tmpspec; dlyrthkdtspec[1] += tmpspec
         # pressure gradient force contribution to divergence tend (includes
         # orography).
-        mstrm = np.empty(lyrthkg.shape, dtype=np.float32)
+        mstrm = np.empty(lyrthkg.shape, dtype=np.float32) # montgomery streamfunction
         mstrm[0] = self.grav*(self.orog + lyrthkg[0] + lyrthkg[1])
         mstrm[1] = mstrm[0] + (self.grav*self.delth/self.theta1)*lyrthkg[1]
         ddivdtspec += -self.ft.lap*self.ft.grdtospec(mstrm+0.5*(ug**2+vg**2))
