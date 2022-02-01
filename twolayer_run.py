@@ -43,6 +43,7 @@ if lyrthkg.min() < 0:
     raise ValueError('negative layer thickness! adjust jet parameters')
 
 savedata = 'twolayerp_N%s_3hrly.nc' % N # save data plotted in a netcdf file.
+#savedata = 'twolayerp_N%s_3hrly.nc' % N # save data plotted in a netcdf file.
 savedata = None # don't save data
 
 if savedata is not None:
