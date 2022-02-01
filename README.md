@@ -1,4 +1,4 @@
-f-plane two-layer PE baroclinic turbulence
+f-plane two-layer PE baroclinic turbulence (with orography)
 
 ![Two-layer Primitive Equation f-plane turbulence](twolayerpe.png?raw=true "Two-Layer PE Turbulence")
 
