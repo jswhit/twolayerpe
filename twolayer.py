@@ -163,9 +163,9 @@ if __name__ == "__main__":
     import os
 
     # grid, time step info
-    N = 128 
+    N = 64  
     L = 20000.e3
-    dt = 300 # time step in seconds
+    dt = 600 # time step in seconds
 
     # get OMP_NUM_THREADS (threads to use) from environment.
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
