@@ -4,20 +4,20 @@ import numpy as np
 import os, time
 
 # grid, time step info
-N = 64
+N = 96 
 L = 20000.e3
 dt = 600 # time step in seconds
 
 # get OMP_NUM_THREADS (threads to use) from environment.
 threads = int(os.getenv('OMP_NUM_THREADS','1'))
-ft = Fouriert(N,L,threads=threads,dealias=True)
+ft = Fouriert(N,L,threads=threads)
 
 # create model instance, override default parameters.
-model=TwoLayer(ft,dt,hmax=2000)
+model=TwoLayer(ft,dt,diff_efold=6.*3600.,hmax=2000)
 
 outputinterval = 3.*3600. # output interval 
-tmin = 10.*86400. # time to start saving data (in days)
-tmax = 60.*86400. # time to stop (in days)
+tmin = 100.*86400. # time to start saving data (in days)
+tmax = 300.*86400. # time to stop (in days)
 nsteps = int(tmax/outputinterval) # number of time steps to animate
 # set number of timesteps to integrate for each call to model.advance
 model.timesteps = int(outputinterval/model.dt)
@@ -65,7 +65,6 @@ if savedata is not None:
     nc.dt = model.dt
     nc.diff_efold = model.diff_efold
     nc.diff_order = model.diff_order
-    nc.dealias = int(model.ft.dealias)
     x = nc.createDimension('x',model.ft.Nt)
     y = nc.createDimension('y',model.ft.Nt)
     z = nc.createDimension('z',2)
@@ -110,4 +109,3 @@ while t < tmax:
         nout = nout + 1
 t2 = time.perf_counter()
 print('total time = ',t2-t1)
-if savedata: nc.close()
