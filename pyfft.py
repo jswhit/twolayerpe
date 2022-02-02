@@ -68,8 +68,6 @@ class Fouriert(object):
         vrtspec = self.ik*vspec  - self.il*uspec
         divspec = self.ik*uspec  + self.il*vspec
         return vrtspec, divspec
-    def getgrad(self, dataspec):
-        return self.spectogrd(self.ik*dataspec), self.spectogrd(self.il*dataspec)
     def specpad(self, specarr):
         # pad spectral arrays with zeros to get
         # interpolation to 3/2 larger grid using inverse fft.
