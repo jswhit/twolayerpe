@@ -10,7 +10,7 @@ from pyfft import Fouriert
 class TwoLayer(object):
 
     def __init__(self,ft,dt,theta1=300,theta2=330,f=1.e-4,\
-                 zmid=5.e3,ztop=10.e3,diff_efold=12*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12.5,hmax=0.e3):
+                 zmid=5.e3,ztop=10.e3,diff_efold=12*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12.5,jetexp=0,hmax=0.e3):
         # setup model parameters
         self.theta1 = np.array(theta1,np.float32) # lower layer pot. temp.
         self.theta2 = np.array(theta2,np.float32) # upper layer pot. temp.
@@ -20,6 +20,7 @@ class TwoLayer(object):
         self.zmid = np.array(zmid,np.float32) # resting depth of lower layer (m)
         self.ztop = np.array(ztop,np.float32) # resting depth of both layers (m)
         self.umax = np.array(umax,np.float32) # equilibrium jet strength
+        self.jetexp = jetexp # jet width parameter (should be even, higher=narrower)
         self.ft = ft # Fouriert instance
         self.dt = np.array(dt,np.float32) # time step (secs)
         self.tdiab = np.array(tdiab*86400.,np.float32) # lower layer drag timescale
@@ -49,7 +50,7 @@ class TwoLayer(object):
         ug = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
         vg = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=np.float32)
         l = np.array(2*np.pi,np.float32) / self.ft.L
-        ug[1] = umax*np.sin(l*self.y)
+        ug[1] = umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
         uspec = self.ft.grdtospec(ug)
         vrtspec, divspec = self.ft.getvrtdivspec(ug,vg)
         ug,vg = self.ft.getuv(vrtspec,divspec)
@@ -138,6 +139,7 @@ class TwoLayer(object):
         lyrthkspec += dt*(k1thk+2.*k2thk+2.*k3thk+k4thk)/6.
         self.t += dt
         return vrtspec,divspec,lyrthkspec
+
     def advance(self, vrtspec, divspec, lyrthkspec):
         # advance forward number of timesteps given by 'timesteps' instance var.
         for n in range(self.timesteps):
@@ -152,7 +154,7 @@ if __name__ == "__main__":
     import os
 
     # grid, time step info
-    N = 64
+    N = 64  
     L = 20000.e3
     dt = 600 # time step in seconds
 
@@ -161,7 +163,8 @@ if __name__ == "__main__":
     ft = Fouriert(N,L,threads=threads)
 
     # create model instance, override default parameters.
-    model=TwoLayer(ft,dt,hmax=2000)
+    #model=TwoLayer(ft,dt,hmax=2000)
+    model=TwoLayer(ft,dt,umax=15,jetexp=8,theta2=315,diff_efold=6.*3600.)
 
     # vort, div initial conditions
     vref = np.zeros(model.uref.shape, model.uref.dtype)
@@ -184,7 +187,7 @@ if __name__ == "__main__":
         raise ValueError('negative layer thickness! adjust jet parameters')
 
     # run model, animate pv
-    nout = int(3.*3600./model.dt) # plot interval
+    nout = int(6.*3600./model.dt) # plot interval
     nsteps = int(100*86400./model.dt)//nout-2 # number of time steps to animate
 
     fig = plt.figure(figsize=(16,8))
