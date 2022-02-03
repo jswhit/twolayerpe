@@ -4,7 +4,7 @@ import numpy as np
 import os, time
 
 # grid, time step info
-N = 96 
+N = 64 
 L = 20000.e3
 dt = 600 # time step in seconds
 
@@ -13,9 +13,10 @@ threads = int(os.getenv('OMP_NUM_THREADS','1'))
 ft = Fouriert(N,L,threads=threads)
 
 # create model instance, override default parameters.
-model=TwoLayer(ft,dt,diff_efold=6.*3600.,hmax=2000)
+model=TwoLayer(ft,dt,umax=15,jetexp=8,theta2=315,diff_efold=6.*3600.)
 
-outputinterval = 3.*3600. # output interval 
+hrout = 6
+outputinterval = hrout*3600. # output interval 
 tmin = 100.*86400. # time to start saving data (in days)
 tmax = 300.*86400. # time to stop (in days)
 nsteps = int(tmax/outputinterval) # number of time steps to animate
@@ -26,13 +27,13 @@ model.timesteps = int(outputinterval/model.dt)
 vref = np.zeros(model.uref.shape, model.uref.dtype)
 vrtspec, divspec = model.ft.getvrtdivspec(model.uref, vref)
 vrtg = model.ft.spectogrd(vrtspec)
-vrtg += np.random.normal(0,1.e-6,size=(2,ft.Nt,ft.Nt)).astype(np.float32)
+vrtg += np.random.normal(0,2.e-6,size=(2,ft.Nt,ft.Nt)).astype(np.float32)
 # add isolated blob to upper layer
 nexp = 20
 x = np.arange(0,2.*np.pi,2.*np.pi/ft.Nt); y = np.arange(0.,2.*np.pi,2.*np.pi/ft.Nt)
 x,y = np.meshgrid(x,y)
 x = x.astype(np.float32); y = y.astype(np.float32)
-vrtg[1] = vrtg[1]+1.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
+vrtg[1] = vrtg[1]+2.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
 vrtspec = model.ft.grdtospec(vrtg)
 divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
 lyrthkspec = model.nlbalance(vrtspec)
@@ -42,7 +43,7 @@ vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
 if lyrthkg.min() < 0:
     raise ValueError('negative layer thickness! adjust jet parameters')
 
-savedata = 'twolayerpe_N%s_3hrly.nc' % N # save data plotted in a netcdf file.
+savedata = 'twolayerpe_N%s_%shrly.nc' % (N,hrout) # save data plotted in a netcdf file.
 #savedata = None # don't save data
 
 if savedata is not None:
@@ -53,6 +54,7 @@ if savedata is not None:
     nc.delth = model.delth
     nc.grav = model.grav
     nc.umax = model.umax
+    nc.jetexp = model.jetexp
     nc.hmax = model.hmax
     nc.ztop = model.ztop
     nc.zmid = model.zmid
@@ -99,7 +101,7 @@ while t < tmax:
     print('t = %g hours' % th)
     if savedata is not None and t >= tmin:
         ug, vg = model.ft.getuv(vrtspec, divspec)
-        zg = model.ft.spectogrd(lyrthkspec)
+        lyrthkg = model.ft.spectogrd(lyrthkspec)
         uvar[nout,:,:,:] = ug
         vvar[nout,:,:,:] = vg
         dzvar[nout,:,:,:] = lyrthkg
