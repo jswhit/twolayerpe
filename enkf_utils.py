@@ -62,6 +62,10 @@ def letkf_update(xens,hxens,obs,oberrs,covlocal):
     ndim = xens.shape[-1]
     for n in range(ndim): # horizontal grid (TODO: parallelize this embarassingly parallel loop)
         xens[:,:,n] = letkf_kernel(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n])
+    #from joblib import Parallel, delayed
+    #results = Parallel(n_jobs=2)(delayed(letkf_kernel)(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n]) for n in range(ndim))
+    #for n in range(ndim):
+    #    xens[:,:,n] = results[n]
     return xens
 
 def serial_update(xens, hxens, obs, oberrs, covlocal, obcovlocal):
