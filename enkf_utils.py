@@ -60,7 +60,7 @@ def letkf_kernel(xens,hxens,obs,oberrs,covlocal):
 def letkf_update(xens,hxens,obs,oberrs,covlocal):
     """letkf method"""
     ndim = xens.shape[-1]
-    for n in range(ndim): # horizontal grid (TODO: parallelize this loop)
+    for n in range(ndim): # horizontal grid (TODO: parallelize this embarassingly parallel loop)
         xens[:,:,n] = letkf_kernel(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n])
     return xens
 

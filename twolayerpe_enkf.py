@@ -51,7 +51,7 @@ threads = int(os.getenv('OMP_NUM_THREADS','1'))
 
 diff_efold = None # use diffusion from climo file
 
-profile = True # turn on profiling?
+profile = False # turn on profiling?
 
 use_letkf = True  # if False, use serial EnSRF
 read_restart = False
@@ -392,7 +392,7 @@ for ntime in range(nassim):
 
     # run forecast ensemble to next analysis time
     t1 = time.time()
-    for nanal in range(nanals):
+    for nanal in range(nanals): # TODO: parallelize this embarassingly parallel loop
         vrtspec, divspec = ft.getvrtdivspec(uens[nanal],vens[nanal])
         dzspec = ft.grdtospec(dzens[nanal])
         vrtspec, divspec, dzspec = models[nanal].advance(vrtspec,divspec,dzspec)
