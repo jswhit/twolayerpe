@@ -62,9 +62,10 @@ def letkf_update(xens,hxens,obs,oberrs,covlocal,n_jobs):
     """letkf method"""
     ndim = xens.shape[-1]
     if not n_jobs:
-        for n in range(ndim): # horizontal grid (TODO: parallelize this embarassingly parallel loop)
+        for n in range(ndim):
             xens[:,:,n] = letkf_kernel(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n])
     else:
+        # use joblib to distribute over n_jobs tasks
         results = Parallel(n_jobs=n_jobs)(delayed(letkf_kernel)(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n]) for n in range(ndim))
         for n in range(ndim):
              xens[:,:,n] = results[n]

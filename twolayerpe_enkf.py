@@ -396,9 +396,10 @@ for ntime in range(nassim):
     t1 = time.time()
     tstart = model.t
     if n_jobs == 0:
-        for nanal in range(nanals): # TODO: parallelize this embarassingly parallel loop
+        for nanal in range(nanals): 
             uens[nanal],vens[nanal],dzens[nanal] = model.advance(uens[nanal],vens[nanal],dzens[nanal],grid=True)
     else:
+        # use joblib to run ens members on different cores (N_JOBS env var sets number of tasks).
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,hmax=hmax) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal] = results[nanal]
