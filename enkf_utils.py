@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.linalg import eigh, cho_solve, cho_factor
+from joblib import Parallel, delayed
 
 # function definitions.
 
@@ -57,15 +58,16 @@ def letkf_kernel(xens,hxens,obs,oberrs,covlocal):
         xens[:, k] = xmean[k] + np.dot(wts.T, xprime[:, k])
     return xens
 
-def letkf_update(xens,hxens,obs,oberrs,covlocal):
+def letkf_update(xens,hxens,obs,oberrs,covlocal,n_jobs):
     """letkf method"""
     ndim = xens.shape[-1]
-    for n in range(ndim): # horizontal grid (TODO: parallelize this embarassingly parallel loop)
-        xens[:,:,n] = letkf_kernel(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n])
-    #from joblib import Parallel, delayed
-    #results = Parallel(n_jobs=2)(delayed(letkf_kernel)(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n]) for n in range(ndim))
-    #for n in range(ndim):
-    #    xens[:,:,n] = results[n]
+    if not n_jobs:
+        for n in range(ndim): # horizontal grid (TODO: parallelize this embarassingly parallel loop)
+            xens[:,:,n] = letkf_kernel(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n])
+    else:
+        results = Parallel(n_jobs=n_jobs)(delayed(letkf_kernel)(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n]) for n in range(ndim))
+        for n in range(ndim):
+             xens[:,:,n] = results[n]
     return xens
 
 def serial_update(xens, hxens, obs, oberrs, covlocal, obcovlocal):

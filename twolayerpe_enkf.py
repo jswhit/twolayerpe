@@ -1,9 +1,10 @@
 import numpy as np
 from netCDF4 import Dataset
 import sys, time, os
-from twolayer import TwoLayer
+from twolayer import TwoLayer, run_model
 from pyfft import Fouriert
 from enkf_utils import cartdist,letkf_update,serial_update,gaspcohn
+from joblib import Parallel, delayed
 
 # EnKF cycling for two-layer pe turbulence model with interface height obs.
 # horizontal localization (no vertical).
@@ -47,7 +48,9 @@ else:
     covinflate2 = 1.
 
 exptname = os.getenv('exptname','test')
-threads = int(os.getenv('OMP_NUM_THREADS','1'))
+# get envar to set number of multiprocessing jobs for LETKF and ensemble forecast
+n_jobs = int(os.getenv('N_JOBS','0'))
+threads = 1
 
 diff_efold = None # use diffusion from climo file
 
@@ -116,24 +119,24 @@ else:
     #for nanal in range(nanals):
     #    print(nanal, uens[nanal].min(), uens[nanal].max())
 
-models = []
-for nanal in range(nanals):
-    if not read_restart:
+model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,\
+hmax=hmax,umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
+if not read_restart:
+    for nanal in range(nanals):
         uens[nanal] = u_climo[indxran[nanal]]
         vens[nanal] = v_climo[indxran[nanal]]
         dzens[nanal] = dz_climo[indxran[nanal]]
         #print(nanal, uens[nanal].min(), uens[nanal].max())
-    models.append(TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,\
-    hmax=hmax,umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold))
-if read_restart: ncinit.close()
+else:
+    ncinit.close()
 
 print("# hcovlocal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
      (hcovlocal_scale/1000.,use_letkf,covinflate1,covinflate2,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
-#nobs = Nt**2 # observe full grid
-nobs = Nt**2//4  
+nobs = Nt**2 # observe full grid
+#nobs = Nt**2//2  
 
 # nature run
 nc_truth = Dataset(filename_truth)
@@ -161,13 +164,12 @@ if read_restart:
 else:
     ntstart = 0
 assim_interval = obtimes[1]-obtimes[0]
-assim_timesteps = int(np.round(assim_interval/models[0].dt))
+assim_timesteps = int(np.round(assim_interval/model.dt))
 print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,obfits,obsprdplusr')
 
 # initialize model clock
-for nanal in range(nanals):
-    models[nanal].t = obtimes[ntstart]
-    models[nanal].timesteps = assim_timesteps
+model.t = obtimes[ntstart]
+model.timesteps = assim_timesteps
 
 # initialize output file.
 if savedata is not None:
@@ -175,7 +177,7 @@ if savedata is not None:
     nc.theta1 = theta1
     nc.theta2 = theta2
     nc.delth = theta2-theta1
-    nc.grav = models[0].grav
+    nc.grav = model.grav
     nc.umax = umax
     nc.jetexp = jetexp
     nc.hmax = hmax
@@ -227,9 +229,9 @@ if savedata is not None:
     tvar.units = 'seconds'
     ensvar = nc.createVariable('ens',np.int32,('ens',))
     ensvar.units = 'dimensionless'
-    xvar[:] = models[0].x[:]
-    yvar[:] = models[0].y[:]
-    zvar[0] = models[0].theta1; zvar[1] = models[0].theta2
+    xvar[:] = model.x[:]
+    yvar[:] = model.y[:]
+    zvar[0] = model.theta1; zvar[1] = model.theta2
     ensvar[:] = np.arange(1,nanals+1)
 
 # calculate spread/error stats in model space
@@ -285,9 +287,9 @@ def gethofx(xens,obs,indxob,nanals,nobs):
 for ntime in range(nassim):
 
     # check model clock
-    if models[0].t != obtimes[ntime+ntstart]:
+    if model.t != obtimes[ntime+ntstart]:
         raise ValueError('model/ob time mismatch %s vs %s' %\
-        (models[0].t, obtimes[ntime+ntstart]))
+        (model.t, obtimes[ntime+ntstart]))
 
     t1 = time.time()
     # randomly choose points from model grid
@@ -343,7 +345,7 @@ for ntime in range(nassim):
 
     # update state vector with serial filter or letkf.
     if use_letkf:
-        xens = letkf_update(xens,hxens,zmidobs,oberrvar,covlocal_tmp)
+        xens = letkf_update(xens,hxens,zmidobs,oberrvar,covlocal_tmp,n_jobs)
     else:
         xens = serial_update(xens,hxens,zmidobs,oberrvar,covlocal_tmp,obcovlocal)
     t2 = time.time()
@@ -392,8 +394,15 @@ for ntime in range(nassim):
 
     # run forecast ensemble to next analysis time
     t1 = time.time()
-    for nanal in range(nanals): # TODO: parallelize this embarassingly parallel loop
-        uens[nanal],vens[nanal],dzens[nanal] = models[nanal].advance(uens[nanal],vens[nanal],dzens[nanal],grid=True)
+    tstart = model.t
+    if n_jobs == 0:
+        for nanal in range(nanals): # TODO: parallelize this embarassingly parallel loop
+            uens[nanal],vens[nanal],dzens[nanal] = model.advance(uens[nanal],vens[nanal],dzens[nanal],grid=True)
+    else:
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,hmax=hmax) for nanal in range(nanals))
+        for nanal in range(nanals):
+            uens[nanal],vens[nanal],dzens[nanal] = results[nanal]
+    model.t = tstart + dt*assim_timesteps
     t2 = time.time()
     if profile: print('cpu time for ens forecast',t2-t1)
 

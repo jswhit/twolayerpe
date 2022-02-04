@@ -158,6 +158,20 @@ class TwoLayer(object):
         else:
             return vrtspec, divspec, lyrthkspec
 
+# simple function suitable for mulitprocessing (easy to serialize)
+def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=330,f=1.e-4,\
+              zmid=5.e3,ztop=10.e3,diff_efold=12*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12.5,jetexp=0,hmax=0.e3):
+    ft = Fouriert(N,L,threads=1)
+    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,\
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,hmax=hmax)
+    vrtspec, divspec = ft.getvrtdivspec(u,v)
+    lyrthkspec = ft.grdtospec(dz)
+    for n in range(timesteps):
+        vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec,divspec,lyrthkspec)
+    u, v = ft.getuv(vrtspec,divspec)
+    dz = ft.spectogrd(lyrthkspec)
+    return u,v,dz
+
 if __name__ == "__main__":
     import matplotlib
     matplotlib.use('qt5agg')
