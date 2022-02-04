@@ -140,11 +140,23 @@ class TwoLayer(object):
         self.t += dt
         return vrtspec,divspec,lyrthkspec
 
-    def advance(self, vrtspec, divspec, lyrthkspec):
+    def advance(self,vrt,div,lyrthk,grid=False):
         # advance forward number of timesteps given by 'timesteps' instance var.
+        # if grid==True, inputs and outputs  are u,v,lyrthk on grid, otherwise
+        # spectral coeffs of vorticity,divergence and layer thickness
+        if grid :
+            vrtspec, divspec = self.ft.getvrtdivspec(vrt,div)
+            lyrthkspec = self.ft.grdtospec(lyrthk)
+        else:
+            vrtspec=vrt;divspec=div;lyrthkspec=lyrthk
         for n in range(self.timesteps):
             vrtspec, divspec, lyrthkspec = self.rk4step(vrtspec,divspec,lyrthkspec)
-        return vrtspec, divspec, lyrthkspec
+        if grid:
+            ug, vg = self.ft.getuv(vrtspec,divspec)
+            lyrthkg = self.ft.spectogrd(lyrthkspec)
+            return ug,vg,lyrthkg
+        else:
+            return vrtspec, divspec, lyrthkspec
 
 if __name__ == "__main__":
     import matplotlib

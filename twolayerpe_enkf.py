@@ -57,7 +57,7 @@ use_letkf = True  # if False, use serial EnSRF
 read_restart = False
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 400 # assimilation times to run
+nassim = 800 # assimilation times to run
 
 nanals = 20 # ensemble members
 
@@ -133,7 +133,7 @@ print("# hcovlocal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
 #nobs = Nt**2 # observe full grid
-nobs = Nt**2//4 # 
+nobs = Nt**2//4  
 
 # nature run
 nc_truth = Dataset(filename_truth)
@@ -393,11 +393,7 @@ for ntime in range(nassim):
     # run forecast ensemble to next analysis time
     t1 = time.time()
     for nanal in range(nanals): # TODO: parallelize this embarassingly parallel loop
-        vrtspec, divspec = ft.getvrtdivspec(uens[nanal],vens[nanal])
-        dzspec = ft.grdtospec(dzens[nanal])
-        vrtspec, divspec, dzspec = models[nanal].advance(vrtspec,divspec,dzspec)
-        uens[nanal],vens[nanal] = ft.getuv(vrtspec,divspec)
-        dzens[nanal] = ft.spectogrd(dzspec)
+        uens[nanal],vens[nanal],dzens[nanal] = models[nanal].advance(uens[nanal],vens[nanal],dzens[nanal],grid=True)
     t2 = time.time()
     if profile: print('cpu time for ens forecast',t2-t1)
 
