@@ -1,6 +1,3 @@
-import matplotlib
-#matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import numpy as np
 from netCDF4 import Dataset
 import sys, time, os
@@ -32,7 +29,7 @@ python twolayerpe_enkf.py hcovlocal_scale <covinflate1 covinflate2>
    raise SystemExit(msg)
 
 # horizontal covariance localization length scale in meters.
-hcovlocal_scale = float(sys.argv[1])
+hcovlocal_scale = 1.e3*float(sys.argv[1])
 
 # optional inflation parameters:
 # (covinflate2 <= 0 for RTPS inflation
@@ -61,8 +58,7 @@ denkf = False # use Sakov DEnKF to update ens perts
 read_restart = False
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 200 # assimilation times to run
-nassim_spinup = 100
+nassim = 400 # assimilation times to run
 
 nanals = 20 # ensemble members
 
@@ -133,13 +129,13 @@ for nanal in range(nanals):
 if read_restart: ncinit.close()
 
 print('# use_letkf=%s denkf=%s' % (use_letkf,denkf))
-print("# hcovlocal=%g diff_efold=%s covinf1=%s covinf2=%s nanals=%s" %\
-     (hcovlocal_scale/1000.,diff_efold,covinflate1,covinflate2,nanals))
+print("# hcovlocal=%g covinf1=%s covinf2=%s nanals=%s" %\
+     (hcovlocal_scale/1000.,covinflate1,covinflate2,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
-#nobs = Nt**2
-nobs = Nt**2//4 # number of obs to assimilate (randomly distributed)
+#nobs = Nt**2 # observe full grid
+nobs = Nt**2//4 # 
 
 # nature run
 nc_truth = Dataset(filename_truth)
@@ -149,14 +145,13 @@ dz_truth = nc_truth.variables['dz']
 
 # set up arrays for obs and localization function
 print('# random network nobs = %s' % nobs)
-dtype = np.float32
-oberrvar = oberrstdev**2*np.ones(nobs,dtype)
-zmidob = np.empty(nobs,dtype)
-covlocal = np.empty(Nt**2,dtype)
-covlocal_tmp = np.empty((nobs,Nt**2),dtype)
-xens = np.empty((nanals,6,Nt**2),dtype)
+oberrvar = oberrstdev**2*np.ones(nobs,np.float32)
+zmidobs = np.empty(nobs,np.float32)
+covlocal = np.empty(Nt**2,np.float32)
+covlocal_tmp = np.empty((nobs,Nt**2),np.float32)
+xens = np.empty((nanals,6,Nt**2),np.float32)
 if not use_letkf:
-    obcovlocal = np.empty((nobs,nobs),dtype)
+    obcovlocal = np.empty((nobs,nobs),np.float32)
 else:
     obcovlocal = None
 
@@ -277,13 +272,13 @@ def getspreaderr(uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     return vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav
 
 # forward operator, ob space stats
-def gethofx(dzens,indxob,nanals,nobs,ztop):
-    hxens = np.empty((nanals,nobs),dtype)
+def gethofx(xens,obs,indxob,nanals,nobs):
+    hxens = np.empty((nanals,nobs),np.float32)
     for nanal in range(nanals):
-        hxens[nanal,:] = ztop-dzens[nanal,1,...].ravel()[indxob] # interface height obs
+        hxens[nanal,:] = xens[nanal,...].ravel()[indxob] # interface height obs
     hxensmean = hxens.mean(axis=0)
     obsprd = ((hxens-hxensmean)**2).sum(axis=0)/(nanals-1)
-    obfits = zmidob - hxensmean
+    obfits = obs - hxensmean
     # ob space prior stats.
     obfits_av = np.sqrt((obfits**2).mean())
     obsprd_av = np.sqrt(obsprd.mean() + oberrstdev**2)
@@ -303,8 +298,8 @@ for ntime in range(nassim):
         np.random.shuffle(indxob) # shuffle needed or serial filter blows up (??)
     else: # random selection of grid points
         indxob = rsobs.choice(Nt**2,nobs,replace=False)
-    zmidob = ztop - dz_truth[ntime+ntstart,1,:,:].ravel()[indxob]
-    zmidob += rsobs.normal(scale=oberrstdev,size=nobs) # add ob errors
+    zmidobs = ztop - dz_truth[ntime+ntstart,1,:,:].ravel()[indxob]
+    zmidobs += rsobs.normal(scale=oberrstdev,size=nobs) # add ob errors
     xob = x.ravel()[indxob]
     yob = y.ravel()[indxob]
 
@@ -318,7 +313,7 @@ for ntime in range(nassim):
 
     # compute forward operator.
     # hxens is ensemble in observation space.
-    hxens, obfits_b, obsprd_b = gethofx(dzens,indxob,nanals,nobs,ztop)
+    hxens, obfits_b, obsprd_b = gethofx(ztop-dzens[:,1,...],zmidobs,indxob,nanals,nobs)
 
     if savedata is not None:
         u_t[ntime] = u_truth[ntime+ntstart]
@@ -327,7 +322,7 @@ for ntime in range(nassim):
         v_b[ntime,:,:,:] = vens
         dz_t[ntime] = dz_truth[ntime+ntstart]
         dz_b[ntime,:,:,:] = dzens
-        obs[ntime] = zmidob
+        obs[ntime] = zmidobs
         x_obs[ntime] = xob
         y_obs[ntime] = yob
 
@@ -340,14 +335,17 @@ for ntime in range(nassim):
     xprime = xens-xensmean_b
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
-    # prior stats model space
+    # prior stats.
     vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
     zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens,vens,dzens,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
+    print("%s %g %g %g %g %g %g %g %g %g %g" %\
+    (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
+     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,obfits_b,obsprd_b))
 
     # update state vector.
     xens =\
-    enkf_update(xens,hxens,zmidob,oberrvar,covlocal_tmp,obcovlocal=obcovlocal,denkf=denkf)
+    enkf_update(xens,hxens,zmidobs,oberrvar,covlocal_tmp,obcovlocal=obcovlocal,denkf=denkf)
     t2 = time.time()
     if profile: print('cpu time for EnKF update',t2-t1)
 
@@ -375,17 +373,14 @@ for ntime in range(nassim):
     vens = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
     dzens = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
-    print("%s %g %g %g %g %g %g %g %g %g %g" %\
-    (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,obfits_b,obsprd_b))
-
-    hxens, obfits_a, obsprd_a = gethofx(dzens,indxob,nanals,nobs,ztop)
-    vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-    zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens,vens,dzens,\
-    u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-    print("%s %g %g %g %g %g %g %g %g %g %g" %\
-    (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-     zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a,obfits_a,obsprd_a))
+    # posterior stats
+    #hxens, obfits_a, obsprd_a = gethofx(ztop-dzens[:,1,...],zmidobs,indxob,nanals,nobs)
+    #vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
+    #zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens,vens,dzens,\
+    #u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
+    #print("%s %g %g %g %g %g %g %g %g %g %g" %\
+    #(ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
+    # zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a,obfits_a,obsprd_a))
 
     # save data.
     if savedata is not None:
