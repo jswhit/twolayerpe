@@ -35,82 +35,71 @@ def gaspcohn(r):
     )
     return taper
 
+def letkf_kernel(xens,hxens,obs,oberrs,covlocal):
+    nanals, nlevs = xens.shape
+    nobs = len(obs)
+    xmean = xens.mean(axis=0)
+    xprime = xens - xmean
+    hxmean = hxens.mean(axis=0)
+    hxprime = hxens - hxmean
+    def calcwts(hx, Rinv, ominusf):
+        YbRinv = np.dot(hx, Rinv)
+        pa = (nanals - 1) * np.eye(nanals) + np.dot(YbRinv, hx.T)
+        evals, eigs = np.linalg.eigh(pa)
+        painv = np.dot(np.dot(eigs, np.diag(np.sqrt(1.0 / evals))), eigs.T)
+        tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
+        return np.sqrt(nanals - 1) * painv + tmp[:, np.newaxis]
+    for k in range(nlevs):
+        mask = covlocal > 1.e-10
+        Rinv = np.diag(covlocal[mask] / oberrs[mask])
+        ominusf = (obs-hxmean)[mask]
+        wts = calcwts(hxprime[:, mask], Rinv, ominusf)
+        xens[:, k] = xmean[k] + np.dot(wts.T, xprime[:, k])
+    return xens
 
-def enkf_update(
-    xens, hxens, obs, oberrs, covlocal, obcovlocal=None, denkf=False):
-    """serial potter method or LETKF (if obcovlocal is None)"""
+def letkf_update(xens,hxens,obs,oberrs,covlocal):
+    """letkf method"""
+    ndim = xens.shape[-1]
+    for n in range(ndim): # horizontal grid (TODO: parallelize this loop)
+        xens[:,:,n] = letkf_kernel(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n])
+    return xens
 
-    # no vertical localization!
-
+def serial_update(xens, hxens, obs, oberrs, covlocal, obcovlocal):
+    """serial potter method"""
     nanals, nlevs, ndim = xens.shape
     nobs = len(obs)
     xmean = xens.mean(axis=0)
     xprime = xens - xmean
     hxmean = hxens.mean(axis=0)
     hxprime = hxens - hxmean
-    eps = 1.e-7
-
-    if obcovlocal is not None:  # serial EnSRF update
-
-        for nob, ob, oberr in zip(np.arange(nobs), obs, oberrs):
-            ominusf = ob - hxmean[nob].copy()
-            hxens = hxprime[:, nob].copy().reshape((nanals, 1))
-            hpbht = (hxens ** 2).sum() / (nanals - 1)
-            if denkf:
-                gainfact = 0.5
-            else:
-                gainfact = (
-                    (hpbht + oberr)
-                    / hpbht
-                    * (1.0 - np.sqrt(oberr / (hpbht + oberr)))
-                )
-            # state space update
-            # only update points closer than localization radius to ob
-            mask = covlocal[nob, :] > eps
-            for k in range(nlevs):
-                pbht = (xprime[:, k, mask].T * hxens[:, 0]).sum(axis=1) / float(
-                    nanals - 1
-                )
-                kfgain = covlocal[nob, mask] * pbht / (hpbht + oberr)
-                xmean[k, mask] = xmean[k, mask] + kfgain * ominusf
-                xprime[:, k, mask] = xprime[:, k, mask] - gainfact * kfgain * hxens
-            # observation space update
-            # only update obs within localization radius
-            mask = obcovlocal[nob, :] > eps
-            pbht = (hxprime[:, mask].T * hxens[:, 0]).sum(axis=1) / float(
+    for nob, ob, oberr in zip(np.arange(nobs), obs, oberrs):
+        ominusf = ob - hxmean[nob].copy()
+        hxens = hxprime[:, nob].copy().reshape((nanals, 1))
+        hpbht = (hxens ** 2).sum() / (nanals - 1)
+        gainfact = (
+            (hpbht + oberr)
+            / hpbht
+            * (1.0 - np.sqrt(oberr / (hpbht + oberr)))
+        )
+        # state space update
+        # only update points closer than localization radius to ob
+        mask = covlocal[nob, :] > 1.e-10
+        for k in range(nlevs):
+            pbht = (xprime[:, k, mask].T * hxens[:, 0]).sum(axis=1) / float(
                 nanals - 1
             )
-            kfgain = obcovlocal[nob, mask] * pbht / (hpbht + oberr)
-            hxmean[mask] = hxmean[mask] + kfgain * ominusf
-            hxprime[:, mask] = (
-                hxprime[:, mask] - gainfact * kfgain * hxens
-            )
-        return xmean + xprime
-
-    else:  # LETKF update
-
-        def calcwts(hx, Rinv, ominusf):
-            YbRinv = np.dot(hx, Rinv)
-            pa = (nanals - 1) * np.eye(nanals) + np.dot(YbRinv, hx.T)
-            if denkf:  # just return what's needed to compute Kalman Gain
-                return np.dot(cho_solve(cho_factor(pa), np.eye(nanals)), YbRinv)
-            evals, eigs = np.linalg.eigh(pa)
-            painv = np.dot(np.dot(eigs, np.diag(np.sqrt(1.0 / evals))), eigs.T)
-            tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
-            return np.sqrt(nanals - 1) * painv + tmp[:, np.newaxis]
-
-        omf = obs - hxmean
-        for n in range(ndim): # horizontal grid
-            for k in range(nlevs):
-                mask = covlocal[:,n] > eps
-                Rinv = np.diag(covlocal[mask, n] / oberrs[mask])
-                ominusf = omf[mask]
-                wts = calcwts(hxprime[:, mask], Rinv, ominusf)
-                if denkf:
-                    kfgain = np.dot(wts.T, xprime[:, k, n])
-                    xmean[k, n] += np.dot(kfgain, ominusf)
-                    xprime[:, k, n] -= 0.5 * np.dot(kfgain, hxprime[:, mask].T)
-                    xens[:, k, n] = xmean[k, n] + xprime[:, k, n]
-                else:
-                    xens[:, k, n] = xmean[k, n] + np.dot(wts.T, xprime[:, k, n])
-        return xens
+            kfgain = covlocal[nob, mask] * pbht / (hpbht + oberr)
+            xmean[k, mask] = xmean[k, mask] + kfgain * ominusf
+            xprime[:, k, mask] = xprime[:, k, mask] - gainfact * kfgain * hxens
+        # observation space update
+        # only update obs within localization radius
+        mask = obcovlocal[nob, :] > 1.e-10
+        pbht = (hxprime[:, mask].T * hxens[:, 0]).sum(axis=1) / float(
+            nanals - 1
+        )
+        kfgain = obcovlocal[nob, mask] * pbht / (hpbht + oberr)
+        hxmean[mask] = hxmean[mask] + kfgain * ominusf
+        hxprime[:, mask] = (
+            hxprime[:, mask] - gainfact * kfgain * hxens
+        )
+    return xmean + xprime

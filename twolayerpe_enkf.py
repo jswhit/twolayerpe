@@ -3,7 +3,7 @@ from netCDF4 import Dataset
 import sys, time, os
 from twolayer import TwoLayer
 from pyfft import Fouriert
-from enkf_utils import cartdist,enkf_update,gaspcohn
+from enkf_utils import cartdist,letkf_update,serial_update,gaspcohn
 
 # EnKF cycling for two-layer pe turbulence model with interface height obs.
 # horizontal localization (no vertical).
@@ -51,10 +51,9 @@ threads = int(os.getenv('OMP_NUM_THREADS','1'))
 
 diff_efold = None # use diffusion from climo file
 
-profile = False # turn on profiling?
+profile = True # turn on profiling?
 
-use_letkf = False  # if False, use serial EnSRF
-denkf = False # use Sakov DEnKF to update ens perts
+use_letkf = True  # if False, use serial EnSRF
 read_restart = False
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
@@ -128,9 +127,8 @@ for nanal in range(nanals):
     hmax=hmax,umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold))
 if read_restart: ncinit.close()
 
-print('# use_letkf=%s denkf=%s' % (use_letkf,denkf))
-print("# hcovlocal=%g covinf1=%s covinf2=%s nanals=%s" %\
-     (hcovlocal_scale/1000.,covinflate1,covinflate2,nanals))
+print("# hcovlocal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
+     (hcovlocal_scale/1000.,use_letkf,covinflate1,covinflate2,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
@@ -343,9 +341,11 @@ for ntime in range(nassim):
     (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
      zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,obfits_b,obsprd_b))
 
-    # update state vector.
-    xens =\
-    enkf_update(xens,hxens,zmidobs,oberrvar,covlocal_tmp,obcovlocal=obcovlocal,denkf=denkf)
+    # update state vector with serial filter or letkf.
+    if use_letkf:
+        xens = letkf_update(xens,hxens,zmidobs,oberrvar,covlocal_tmp)
+    else:
+        xens = serial_update(xens,hxens,zmidobs,oberrvar,covlocal_tmp,obcovlocal)
     t2 = time.time()
     if profile: print('cpu time for EnKF update',t2-t1)
 
