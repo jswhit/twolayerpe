@@ -58,6 +58,27 @@ def letkf_kernel(xens,hxens,obs,oberrs,covlocal):
         xens[:, k] = xmean[k] + np.dot(wts.T, xprime[:, k])
     return xens
 
+def letkf_kernel2(xens,hxens,obs,oberrs,covlocal):
+    nanals, nlevs = xens.shape
+    nobs = len(obs)
+    xmean = xens.mean(axis=0)
+    xprime = xens - xmean
+    hxmean = hxens.mean(axis=0)
+    hxprime = hxens - hxmean
+    def calcwts(hx, Rinv, ominusf):
+        YbRinv = np.dot(hx, Rinv)
+        pa = (nanals - 1) * np.eye(nanals) + np.dot(YbRinv, hx.T)
+        evals, eigs = np.linalg.eigh(pa)
+        painv = np.dot(np.dot(eigs, np.diag(np.sqrt(1.0 / evals))), eigs.T)
+        tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
+        return np.sqrt(nanals - 1) * painv + tmp[:, np.newaxis]
+    for k in range(nlevs):
+        Rinv = np.diag(covlocal / oberrs)
+        ominusf = obs-hxmean
+        wts = calcwts(hxprime, Rinv, ominusf)
+        xens[:, k] = xmean[k] + np.dot(wts.T, xprime[:, k])
+    return xens
+
 def letkf_update(xens,hxens,obs,oberrs,covlocal,n_jobs):
     """letkf method"""
     ndim = xens.shape[-1]
@@ -66,7 +87,15 @@ def letkf_update(xens,hxens,obs,oberrs,covlocal,n_jobs):
             xens[:,:,n] = letkf_kernel(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n])
     else:
         # use joblib to distribute over n_jobs tasks
+        hxensm = []; oberrsm = []; obsm = []; covlocalm = [] 
+        for n in range(ndim):
+            mask = covlocal[:,n] > 1.e-10
+            hxensm.append(hxens[:,mask])
+            oberrsm.append(oberrs[mask])
+            obsm.append(obs[mask])
+            covlocalm.append(covlocal[mask,n])
         results = Parallel(n_jobs=n_jobs)(delayed(letkf_kernel)(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n]) for n in range(ndim))
+        #results=Parallel(n_jobs=n_jobs)(delayed(letkf_kernel2)(xens[:,:,n],hxensm,obsm,oberrsm,covlocalm) for n in range(ndim))
         for n in range(ndim):
              xens[:,:,n] = results[n]
     return xens
