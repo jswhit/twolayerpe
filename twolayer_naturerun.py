@@ -10,11 +10,14 @@ dt = 600 # time step in seconds
 
 # get OMP_NUM_THREADS (threads to use) from environment.
 threads = int(os.getenv('OMP_NUM_THREADS','1'))
-ft = Fouriert(N,L,threads=threads)
+precision = 'single'
 
-# create model instance, override default parameters.
-model=TwoLayer(ft,dt,umax=15,jetexp=8,theta2=315,diff_efold=6.*3600.)
+ft = Fouriert(N,L,threads=threads,precision=precision)
 
+# create model instance.
+model=TwoLayer(ft,dt)
+
+dtype = model.dtype
 hrout = 6
 outputinterval = hrout*3600. # output interval 
 tmin = 100.*86400. # time to start saving data (in days)
@@ -27,12 +30,12 @@ model.timesteps = int(outputinterval/model.dt)
 vref = np.zeros(model.uref.shape, model.uref.dtype)
 vrtspec, divspec = model.ft.getvrtdivspec(model.uref, vref)
 vrtg = model.ft.spectogrd(vrtspec)
-vrtg += np.random.normal(0,2.e-6,size=(2,ft.Nt,ft.Nt)).astype(np.float32)
+vrtg += np.random.normal(0,2.e-6,size=(2,ft.Nt,ft.Nt)).astype(dtype)
 # add isolated blob to upper layer
 nexp = 20
 x = np.arange(0,2.*np.pi,2.*np.pi/ft.Nt); y = np.arange(0.,2.*np.pi,2.*np.pi/ft.Nt)
 x,y = np.meshgrid(x,y)
-x = x.astype(np.float32); y = y.astype(np.float32)
+x = x.astype(dtype); y = y.astype(dtype)
 vrtg[1] = vrtg[1]+2.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
 vrtspec = model.ft.grdtospec(vrtg)
 divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
@@ -43,7 +46,7 @@ vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
 if lyrthkg.min() < 0:
     raise ValueError('negative layer thickness! adjust jet parameters')
 
-savedata = 'twolayerpe_N%s_%shrly.nc' % (N,hrout) # save data plotted in a netcdf file.
+savedata = 'twolayerpe2_N%s_%shrly.nc' % (N,hrout) # save data plotted in a netcdf file.
 #savedata = None # don't save data
 
 if savedata is not None:
@@ -72,21 +75,21 @@ if savedata is not None:
     z = nc.createDimension('z',2)
     t = nc.createDimension('t',None)
     uvar =\
-    nc.createVariable('u',np.float32,('t','z','y','x'),zlib=True)
+    nc.createVariable('u',dtype,('t','z','y','x'),zlib=True)
     uvar.units = 'm/s'
     vvar =\
-    nc.createVariable('v',np.float32,('t','z','y','x'),zlib=True)
+    nc.createVariable('v',dtype,('t','z','y','x'),zlib=True)
     vvar.units = 'm/s'
     dzvar =\
-    nc.createVariable('dz',np.float32,('t','z','y','x'),zlib=True)
+    nc.createVariable('dz',dtype,('t','z','y','x'),zlib=True)
     dzvar.units = 'm'
-    xvar = nc.createVariable('x',np.float32,('x',))
+    xvar = nc.createVariable('x',dtype,('x',))
     xvar.units = 'meters'
-    yvar = nc.createVariable('y',np.float32,('y',))
+    yvar = nc.createVariable('y',dtype,('y',))
     yvar.units = 'meters'
-    zvar = nc.createVariable('z',np.float32,('z',))
+    zvar = nc.createVariable('z',dtype,('z',))
     zvar.units = 'meters'
-    tvar = nc.createVariable('t',np.float32,('t',))
+    tvar = nc.createVariable('t',dtype,('t',))
     tvar.units = 'seconds'
     xvar[:] = model.x[0,:]
     yvar[:] = model.y[:,0]

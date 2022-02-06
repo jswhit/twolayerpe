@@ -51,7 +51,7 @@ def letkf_kernel(xens,hxens,obs,oberrs,covlocal):
         tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
         return np.sqrt(nanals - 1) * painv + tmp[:, np.newaxis]
     for k in range(nlevs):
-        mask = covlocal > 1.e-10
+        mask = np.logical_and(covlocal > 1.e-10, oberrs < 1.e10)
         Rinv = np.diag(covlocal[mask] / oberrs[mask])
         ominusf = (obs-hxmean)[mask]
         wts = calcwts(hxprime[:, mask], Rinv, ominusf)
@@ -79,6 +79,7 @@ def serial_update(xens, hxens, obs, oberrs, covlocal, obcovlocal):
     hxmean = hxens.mean(axis=0)
     hxprime = hxens - hxmean
     for nob, ob, oberr in zip(np.arange(nobs), obs, oberrs):
+        if oberr > 1.e10: continue
         ominusf = ob - hxmean[nob].copy()
         hxens = hxprime[:, nob].copy().reshape((nanals, 1))
         hpbht = (hxens ** 2).sum() / (nanals - 1)
