@@ -34,8 +34,10 @@ class Fouriert(object):
                                           axes=(-2, -1), threads=threads, planner_effort='FFTW_ESTIMATE')
         # spectral stuff
         dk = 2.*np.pi/self.L
-        k =  dk*np.arange(0.,self.N//2+1)
-        l =  dk*np.append( np.arange(0.,self.N//2),np.arange(-self.N//2,0.) )
+        #k =  dk*np.arange(0.,self.N//2+1)
+        #l =  dk*np.append( np.arange(0.,self.N//2),np.arange(-self.N//2,0.) )
+        k = dk*(N * np.fft.fftfreq(N))[0 : (N // 2) + 1] # last freq is negative, unlike above
+        l = dk*N * np.fft.fftfreq(N)
         k, l = np.meshgrid(k, l)
         self.k = k.astype(dtype)
         self.l = l.astype(dtype)
