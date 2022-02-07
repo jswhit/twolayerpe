@@ -134,6 +134,8 @@ class TwoLayer(object):
         dt = self.dt
         k1vrt,k1div,k1thk = \
         self.gettend(vrtspec,divspec,lyrthkspec)
+        self.masstendspec = k1thk.sum(axis=0)
+        self.masstendvar = (self.masstendspec*np.conjugate(self.masstendspec)).real
         k2vrt,k2div,k2thk = \
         self.gettend(vrtspec+0.5*dt*k1vrt,divspec+0.5*dt*k1div,lyrthkspec+0.5*dt*k1thk)
         k3vrt,k3div,k3thk = \
@@ -249,6 +251,7 @@ if __name__ == "__main__":
         lyrthkg = model.ft.spectogrd(lyrthkspec)
         pv = (0.5*model.zmid/model.f)*(vrtg + model.f)/lyrthkg
         td = (model.t-model.dt)/86400.
+        print('day ',td,' mass tend diag = ', model.masstendvar.sum() )
         im1.set_data(pv[0])
         txt1.set_text('Lower Layer PV day %7.3f' % td)
         im2.set_data(pv[1])
