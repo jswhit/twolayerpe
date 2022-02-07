@@ -15,7 +15,7 @@ precision = 'double'
 ft = Fouriert(N,L,threads=threads,precision=precision)
 
 # create model instance.
-model=TwoLayer(ft,dt,theta2=315,umax=5)
+model=TwoLayer(ft,dt,umax=15,jetexp=2,hmax=-1500)
 
 dtype = model.dtype
 hrout = 3

@@ -58,7 +58,7 @@ profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
 read_restart = False
-debug_model = True # run perfect model ensemble, check to see that error=zero with no DA
+debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
 precision = 'single'
 savedata = None # if not None, netcdf filename to save data.
@@ -68,10 +68,10 @@ nassim = 800 # assimilation times to run
 nanals = 20 # ensemble members
 
 oberrstdev_zmid = 100.  # interface height ob error in meters
-oberrstdev_wind = 1.e30 # wind ob error in meters per second
+oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
 
 # nature run created using twolayer_naturerun.py.
-filename_climo = 'twolayerpe_N64_3hrly.nc' # file name for forecast model climo
+filename_climo = 'twolayerpe_N64_6hrly.nc' # file name for forecast model climo
 # perfect model
 filename_truth = filename_climo
 
@@ -158,7 +158,7 @@ print("# hcovlocal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
 #nobs = Nt**2 # observe full grid
-nobs = Nt**2/4
+nobs = Nt**2//10
 
 # nature run
 nc_truth = Dataset(filename_truth)
