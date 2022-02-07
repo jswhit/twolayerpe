@@ -51,6 +51,7 @@ class TwoLayer(object):
         self._interface_profile(umax)
         self.t = 0.
         self.timesteps = 1
+        self.masstendvar = 0
 
     def _interface_profile(self,umax):
         ug = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=self.dtype)
@@ -134,8 +135,8 @@ class TwoLayer(object):
         dt = self.dt
         k1vrt,k1div,k1thk = \
         self.gettend(vrtspec,divspec,lyrthkspec)
-        self.masstendspec = k1thk.sum(axis=0)
-        self.masstendvar = (self.masstendspec*np.conjugate(self.masstendspec)).real
+        masstendspec = k1thk.sum(axis=0)
+        self.masstendvar = ((masstendspec*np.conjugate(masstendspec)).real).sum()
         k2vrt,k2div,k2thk = \
         self.gettend(vrtspec+0.5*dt*k1vrt,divspec+0.5*dt*k1div,lyrthkspec+0.5*dt*k1thk)
         k3vrt,k3div,k3thk = \
@@ -178,7 +179,7 @@ def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=330,f=1.e-4,\
         vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec,divspec,lyrthkspec)
     u, v = ft.getuv(vrtspec,divspec)
     dz = ft.spectogrd(lyrthkspec)
-    return u,v,dz
+    return u,v,dz,model.masstendvar
 
 if __name__ == "__main__":
     import matplotlib
@@ -251,7 +252,6 @@ if __name__ == "__main__":
         lyrthkg = model.ft.spectogrd(lyrthkspec)
         pv = (0.5*model.zmid/model.f)*(vrtg + model.f)/lyrthkg
         td = (model.t-model.dt)/86400.
-        print('day ',td,' mass tend diag = ', model.masstendvar.sum() )
         im1.set_data(pv[0])
         txt1.set_text('Lower Layer PV day %7.3f' % td)
         im2.set_data(pv[1])

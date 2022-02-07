@@ -59,11 +59,11 @@ profile = False # turn on profiling?
 use_letkf = True # if False, use serial EnSRF
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
-posterior_stats = False
+posterior_stats = True
 precision = 'single'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 800 # assimilation times to run
+nassim = 200 # assimilation times to run
 
 nanals = 20 # ensemble members
 
@@ -71,7 +71,7 @@ oberrstdev_zmid = 100.  # interface height ob error in meters
 oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
 
 # nature run created using twolayer_naturerun.py.
-filename_climo = 'twolayerpe_N64_6hrly.nc' # file name for forecast model climo
+filename_climo = 'twolayerpe_N64_24hrly.nc' # file name for forecast model climo
 # perfect model
 filename_truth = filename_climo
 
@@ -158,7 +158,7 @@ print("# hcovlocal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
 #nobs = Nt**2 # observe full grid
-nobs = Nt**2//10
+nobs = Nt**2//16
 
 # nature run
 nc_truth = Dataset(filename_truth)
@@ -192,7 +192,7 @@ else:
 assim_interval = obtimes[1]-obtimes[0]
 assim_timesteps = int(np.round(assim_interval/model.dt))
 print('# assim_interval = %s assim_timesteps = %s' % (assim_interval,assim_timesteps))
-print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,obfits,obsprdplusr')
+print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,masstend_diag')
 
 # initialize model clock
 model.t = obtimes[ntstart]
@@ -309,6 +309,7 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
+masstend_diag = 0.
 for ntime in range(nassim):
 
     # check model clock
@@ -382,9 +383,9 @@ for ntime in range(nassim):
     vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
     zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens,vens,dzens,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-    print("%s %g %g %g %g %g %g %g %g" %\
+    print("%s %g %g %g %g %g %g %g %g %g" %\
     (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b))
+     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,masstend_diag))
 
     # update state vector with serial filter or letkf.
     if not debug_model: 
@@ -440,13 +441,17 @@ for ntime in range(nassim):
     t1 = time.time()
     tstart = model.t
     if n_jobs == 0:
+        masstend_diag=0.
         for nanal in range(nanals): 
             uens[nanal],vens[nanal],dzens[nanal] = model.advance(uens[nanal],vens[nanal],dzens[nanal],grid=True)
+            masstend_diag+=model.masstendvar/nanals
     else:
         # use joblib to run ens members on different cores (N_JOBS env var sets number of tasks).
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,hmax=hmax) for nanal in range(nanals))
+        masstend_diag=0.
         for nanal in range(nanals):
-            uens[nanal],vens[nanal],dzens[nanal] = results[nanal]
+            uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+            masstend_diag+=mtend/nanals
     model.t = tstart + dt*assim_timesteps
     t2 = time.time()
     if profile: print('cpu time for ens forecast',t2-t1)

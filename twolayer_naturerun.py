@@ -18,7 +18,7 @@ ft = Fouriert(N,L,threads=threads,precision=precision)
 model=TwoLayer(ft,dt,umax=15,jetexp=2,hmax=-1500)
 
 dtype = model.dtype
-hrout = 3
+hrout = 24
 outputinterval = hrout*3600. # output interval 
 tmin = 100.*86400. # time to start saving data (in days)
 tmax = 300.*86400. # time to stop (in days)
