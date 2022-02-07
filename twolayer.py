@@ -10,7 +10,7 @@ from pyfft import Fouriert
 class TwoLayer(object):
 
     def __init__(self,ft,dt,theta1=300,theta2=330,f=1.e-4,\
-                 zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12.5,jetexp=0,hmax=0.e3):
+                 zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=0,hmax=0.e3):
         if ft.precision == 'single':
             dtype = 'float32'
         else:
@@ -28,8 +28,8 @@ class TwoLayer(object):
         self.jetexp = jetexp # jet width parameter (should be even, higher=narrower)
         self.ft = ft # Fouriert instance
         self.dt = np.array(dt,dtype) # time step (secs)
-        self.tdiab = np.array(tdiab*86400.,dtype) # lower layer drag timescale
-        self.tdrag = np.array(tdrag*86400.,dtype) # interface relaxation timescale
+        self.tdiab = np.array(tdiab,dtype) # lower layer drag timescale
+        self.tdrag = np.array(tdrag,dtype) # interface relaxation timescale
         self.f = np.array(f,dtype)
         # hyperdiffusion parameters
         self.diff_order = np.array(diff_order, dtype)  # hyperdiffusion order
@@ -165,7 +165,7 @@ class TwoLayer(object):
 
 # simple function suitable for mulitprocessing (easy to serialize)
 def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=330,f=1.e-4,\
-              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4,tdiab=20,umax=12.5,jetexp=0,hmax=0.e3):
+              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=0,hmax=0.e3):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,hmax=hmax)
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     ft = Fouriert(N,L,threads=threads)
 
     # create model instance, override default parameters.
-    model=TwoLayer(ft,dt)
+    model=TwoLayer(ft,dt,theta2=315,umax=5)
 
     # vort, div initial conditions
     dtype = model.dtype
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     vrtg = model.ft.spectogrd(vrtspec)
     lyrthkg = model.ft.spectogrd(lyrthkspec)
     pv = (0.5*model.zmid/model.f)*(vrtg + model.f)/lyrthkg
-    vmin = 0; vmax = 2.0
+    vmin = 0; vmax = 1.75 
     ax = fig.add_subplot(121); ax.axis('off')
     plt.tight_layout()
     im1=ax.imshow(pv[0],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")

@@ -56,9 +56,9 @@ diff_efold = None # use diffusion from climo file
 
 profile = False # turn on profiling?
 
-use_letkf = False  # if False, use serial EnSRF
+use_letkf = True # if False, use serial EnSRF
 read_restart = False
-debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
+debug_model = True # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
 precision = 'single'
 savedata = None # if not None, netcdf filename to save data.
@@ -67,11 +67,11 @@ nassim = 800 # assimilation times to run
 
 nanals = 20 # ensemble members
 
-oberrstdev_zmid = 100. # interface height ob error in meters
-oberrstdev_wind = 2. # wind ob error in meters per second
+oberrstdev_zmid = 100.  # interface height ob error in meters
+oberrstdev_wind = 1.e30 # wind ob error in meters per second
 
 # nature run created using twolayer_naturerun.py.
-filename_climo = 'twolayerpe2_N64_3hrly.nc' # file name for forecast model climo
+filename_climo = 'twolayerpe_N64_3hrly.nc' # file name for forecast model climo
 # perfect model
 filename_truth = filename_climo
 
@@ -109,6 +109,14 @@ ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transfor
 
 model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,\
 hmax=hmax,umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
+if debug_model:
+   print('N,Nt,L=',N,Nt,L)
+   print('theta1,theta2=',theta1,theta2)
+   print('zmid,ztop=',zmid,ztop)
+   print('tdrag,tdiag=',tdrag/86400,tdiab/86400.)
+   print('umax,jetexp=',umax,jetexp)
+   print('diff_order,diff_efold=',diff_order,diff_efold)
+   print('hmax=',hmax)
 
 dtype = model.dtype
 uens = np.empty((nanals,2,Nt,Nt),dtype)
@@ -149,8 +157,8 @@ print("# hcovlocal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
-nobs = Nt**2 # observe full grid
-nobs = Nt**2//8  
+#nobs = Nt**2 # observe full grid
+nobs = Nt**2/4
 
 # nature run
 nc_truth = Dataset(filename_truth)
@@ -412,12 +420,13 @@ for ntime in range(nassim):
     dzens = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
     # posterior stats
-    vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-    zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens,vens,dzens,\
-    u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-    print("%s %g %g %g %g %g %g %g %g" %\
-    (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-     zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a))
+    if posterior_stats:
+        vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
+        zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens,vens,dzens,\
+        u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
+        print("%s %g %g %g %g %g %g %g %g" %\
+        (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
+         zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a))
 
     # save data.
     if savedata is not None:

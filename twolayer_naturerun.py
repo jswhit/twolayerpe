@@ -10,15 +10,15 @@ dt = 600 # time step in seconds
 
 # get OMP_NUM_THREADS (threads to use) from environment.
 threads = int(os.getenv('OMP_NUM_THREADS','1'))
-precision = 'single'
+precision = 'double'
 
 ft = Fouriert(N,L,threads=threads,precision=precision)
 
 # create model instance.
-model=TwoLayer(ft,dt)
+model=TwoLayer(ft,dt,theta2=315,umax=5)
 
 dtype = model.dtype
-hrout = 6
+hrout = 3
 outputinterval = hrout*3600. # output interval 
 tmin = 100.*86400. # time to start saving data (in days)
 tmax = 300.*86400. # time to stop (in days)
@@ -46,7 +46,7 @@ vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
 if lyrthkg.min() < 0:
     raise ValueError('negative layer thickness! adjust jet parameters')
 
-savedata = 'twolayerpe2_N%s_%shrly.nc' % (N,hrout) # save data plotted in a netcdf file.
+savedata = 'twolayerpe_N%s_%shrly.nc' % (N,hrout) # save data plotted in a netcdf file.
 #savedata = None # don't save data
 
 if savedata is not None:
