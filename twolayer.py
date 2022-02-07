@@ -45,7 +45,8 @@ class TwoLayer(object):
         x, y = np.meshgrid(x,y)
         self.x = x; self.y = y
         l = 2.*pi / self.ft.L
-        self.orog = hmax*np.sin(l*y)*np.sin(l*x)
+        #self.orog = hmax*np.sin(l*y)*np.sin(l*x)
+        self.orog = hmax*np.sin(0.5*l*y)
         # set equilibrium layer thicknes profile.
         self._interface_profile(umax)
         self.t = 0.
@@ -194,7 +195,7 @@ if __name__ == "__main__":
     ft = Fouriert(N,L,threads=threads)
 
     # create model instance, override default parameters.
-    model=TwoLayer(ft,dt,theta2=315,umax=5)
+    model=TwoLayer(ft,dt,theta2=330,umax=15,jetexp=2,hmax=-1500)
 
     # vort, div initial conditions
     dtype = model.dtype
@@ -219,7 +220,7 @@ if __name__ == "__main__":
 
     # run model, animate pv
     nout = int(6.*3600./model.dt) # plot interval
-    nsteps = int(100*86400./model.dt)//nout-2 # number of time steps to animate
+    nsteps = int(300*86400./model.dt)//nout-2 # number of time steps to animate
 
     fig = plt.figure(figsize=(16,8))
     vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec, lyrthkspec)
