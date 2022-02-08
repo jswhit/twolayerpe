@@ -223,15 +223,12 @@ if __name__ == "__main__":
 
     # run model, animate pv
     nout = int(6.*3600./model.dt) # plot interval
-    nsteps = int(300*86400./model.dt)//nout-2 # number of time steps to animate
+    nsteps = int(100*86400./model.dt)//nout-2 # number of time steps to animate
 
     fig = plt.figure(figsize=(16,8))
-    vrtspec, divspec, lyrthkspec = model.rk4step(vrtspec, divspec, lyrthkspec)
-    vrtg = model.ft.spectogrd(vrtspec)
-    lyrthkg = model.ft.spectogrd(lyrthkspec)
+    ax = fig.add_subplot(121); ax.axis('off')
     pv = (0.5*model.zmid/model.f)*(vrtg + model.f)/lyrthkg
     vmin = 0; vmax = 1.75 
-    ax = fig.add_subplot(121); ax.axis('off')
     plt.tight_layout()
     im1=ax.imshow(pv[0],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")
     td = model.t/86400.
@@ -251,7 +248,7 @@ if __name__ == "__main__":
         vrtg = model.ft.spectogrd(vrtspec)
         lyrthkg = model.ft.spectogrd(lyrthkspec)
         pv = (0.5*model.zmid/model.f)*(vrtg + model.f)/lyrthkg
-        td = (model.t-model.dt)/86400.
+        td = model.t/86400.
         im1.set_data(pv[0])
         txt1.set_text('Lower Layer PV day %7.3f' % td)
         im2.set_data(pv[1])
