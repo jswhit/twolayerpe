@@ -56,7 +56,7 @@ diff_efold = None # use diffusion from climo file
 
 profile = False # turn on profiling?
 
-use_letkf = True # if False, use serial EnSRF
+use_letkf = False # if False, use serial EnSRF
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = True
@@ -421,13 +421,13 @@ for ntime in range(nassim):
     dzens = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
     # posterior stats
-    if posterior_stats:
-        vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-        zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens,vens,dzens,\
-        u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-        print("%s %g %g %g %g %g %g %g %g" %\
-        (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-         zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a))
+    #if posterior_stats:
+    #    vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
+    #    zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens,vens,dzens,\
+    #    u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
+    #    print("%s %g %g %g %g %g %g %g %g" %\
+    #    (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
+    #     zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a))
 
     # save data.
     if savedata is not None:
