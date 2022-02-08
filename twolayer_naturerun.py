@@ -21,7 +21,7 @@ dtype = model.dtype
 hrout = 24
 outputinterval = hrout*3600. # output interval 
 tmin = 100.*86400. # time to start saving data (in days)
-tmax = 300.*86400. # time to stop (in days)
+tmax = 500.*86400. # time to stop (in days)
 nsteps = int(tmax/outputinterval) # number of time steps to animate
 # set number of timesteps to integrate for each call to model.advance
 model.timesteps = int(outputinterval/model.dt)
