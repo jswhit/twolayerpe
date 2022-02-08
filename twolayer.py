@@ -17,23 +17,23 @@ class TwoLayer(object):
             dtype = 'float64'
         # setup model parameters
         self.dtype = dtype
-        self.theta1 = np.array(theta1,dtype) # lower layer pot. temp.
-        self.theta2 = np.array(theta2,dtype) # upper layer pot. temp.
+        self.theta1 = np.array(theta1,dtype) # lower layer pot. temp. (K)
+        self.theta2 = np.array(theta2,dtype) # upper layer pot. temp. (K)
         self.delth = np.array(theta2-theta1,dtype) # difference in potential temp between layers
-        self.hmax = np.array(hmax,dtype) # orographic amplitude
+        self.hmax = np.array(hmax,dtype) # orographic amplitude (m)
         self.grav = 9.80616 # gravity
         self.zmid = np.array(zmid,dtype) # resting depth of lower layer (m)
         self.ztop = np.array(ztop,dtype) # resting depth of both layers (m)
         self.umax = np.array(umax,dtype) # equilibrium jet strength
         self.jetexp = jetexp # jet width parameter (should be even, higher=narrower)
-        self.ft = ft # Fouriert instance
+        self.ft = ft # Fouriert instance (defines domain size, grid resolution)
         self.dt = np.array(dt,dtype) # time step (secs)
-        self.tdiab = np.array(tdiab,dtype) # lower layer drag timescale
-        self.tdrag = np.array(tdrag,dtype) # interface relaxation timescale
-        self.f = np.array(f,dtype)
+        self.tdiab = np.array(tdiab,dtype) # lower layer drag timescale (secs)
+        self.tdrag = np.array(tdrag,dtype) # interface relaxation timescale (secs)
+        self.f = np.array(f,dtype) # coriolis parameter
         # hyperdiffusion parameters
         self.diff_order = np.array(diff_order, dtype)  # hyperdiffusion order
-        self.diff_efold = np.array(diff_efold, dtype)  # hyperdiff time scale
+        self.diff_efold = np.array(diff_efold, dtype)  # hyperdiff time scale (secs)
         ktot = np.sqrt(self.ft.ksqlsq)
         pi = np.array(np.pi,dtype)  
         ktotcutoff = np.array(pi * self.ft.N / self.ft.L, dtype)
@@ -45,8 +45,8 @@ class TwoLayer(object):
         x, y = np.meshgrid(x,y)
         self.x = x; self.y = y
         l = 2.*pi / self.ft.L
-        #self.orog = hmax*np.sin(l*y)*np.sin(l*x)
-        self.orog = hmax*np.sin(0.5*l*y)
+        #self.orog = hmax*np.sin(l*y)*np.sin(l*x) # wavenumber 1 in x and y
+        self.orog = hmax*np.sin(0.5*l*y) # a zonally symmetric ridge
         # set equilibrium layer thicknes profile.
         self._interface_profile(umax)
         self.t = 0.
@@ -83,7 +83,7 @@ class TwoLayer(object):
         lyrthkspec[1,...] = (mspec[1,:]-mspec[0,...])/self.delth
         lyrthkspec[0,...] = lyrthkspec[0,...] - lyrthkspec[1,...]
         lyrthkspec = (self.theta1/self.grav)*lyrthkspec # convert from exner function to height units (m)
-        # set area mean in grid space
+        # set area mean in grid space to state of rest value
         lyrthkg = self.ft.spectogrd(lyrthkspec)
         lyrthkg[0,...] = lyrthkg[0,...] - lyrthkg[0,...].mean() + self.ztop - self.zmid
         lyrthkg[1,...] = lyrthkg[1,...] - lyrthkg[1,...].mean() + self.zmid
@@ -136,7 +136,8 @@ class TwoLayer(object):
         k1vrt,k1div,k1thk = \
         self.gettend(vrtspec,divspec,lyrthkspec)
         masstendspec = k1thk.sum(axis=0)
-        self.masstendvar = ((masstendspec*np.conjugate(masstendspec)).real).sum()
+        # parameter measuring vertically integrated mass tend amplitude (external mode imbalance)
+        self.masstendvar = ((masstendspec*np.conjugate(masstendspec)).real).sum() 
         k2vrt,k2div,k2thk = \
         self.gettend(vrtspec+0.5*dt*k1vrt,divspec+0.5*dt*k1div,lyrthkspec+0.5*dt*k1thk)
         k3vrt,k3div,k3thk = \
