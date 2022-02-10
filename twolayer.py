@@ -47,6 +47,7 @@ class TwoLayer(object):
         l = 2.*pi / self.ft.L
         #self.orog = hmax*np.sin(l*y)*np.sin(l*x) # wavenumber 1 in x and y
         self.orog = hmax*np.sin(0.5*l*y) # a zonally symmetric ridge
+        self.orog = self.orog - self.orog.mean() # remove zonal mean
         # set equilibrium layer thicknes profile.
         self._interface_profile(umax)
         self.t = 0.
