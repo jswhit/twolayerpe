@@ -10,18 +10,18 @@ dt = 600 # time step in seconds
 
 # get OMP_NUM_THREADS (threads to use) from environment.
 threads = int(os.getenv('OMP_NUM_THREADS','1'))
-precision = 'double'
+precision = 'single'
 
 ft = Fouriert(N,L,threads=threads,precision=precision)
 
 # create model instance.
-model=TwoLayer(ft,dt,umax=15,jetexp=2,hmax=-1500)
+model=TwoLayer(ft,dt,theta2=320,umax=12.5,jetexp=2)
 
 dtype = model.dtype
 hrout = 24
 outputinterval = hrout*3600. # output interval 
 tmin = 100.*86400. # time to start saving data (in days)
-tmax = 500.*86400. # time to stop (in days)
+tmax = 300.*86400. # time to stop (in days)
 nsteps = int(tmax/outputinterval) # number of time steps to animate
 # set number of timesteps to integrate for each call to model.advance
 model.timesteps = int(outputinterval/model.dt)
@@ -58,7 +58,6 @@ if savedata is not None:
     nc.grav = model.grav
     nc.umax = model.umax
     nc.jetexp = model.jetexp
-    nc.hmax = model.hmax
     nc.ztop = model.ztop
     nc.zmid = model.zmid
     nc.f = model.f

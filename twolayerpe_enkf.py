@@ -98,7 +98,6 @@ zmid = nc_climo.zmid
 ztop = nc_climo.ztop
 tdrag = nc_climo.tdrag
 tdiab = nc_climo.tdiab
-hmax = nc_climo.hmax
 N = nc_climo.N
 Nt = nc_climo.Nt
 L = nc_climo.L
@@ -109,7 +108,7 @@ diff_order=nc_climo.diff_order
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
 model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,\
-hmax=hmax,umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
+umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
 if debug_model:
    print('N,Nt,L=',N,Nt,L)
    print('theta1,theta2=',theta1,theta2)
@@ -117,7 +116,6 @@ if debug_model:
    print('tdrag,tdiag=',tdrag/86400,tdiab/86400.)
    print('umax,jetexp=',umax,jetexp)
    print('diff_order,diff_efold=',diff_order,diff_efold)
-   print('hmax=',hmax)
 
 dtype = model.dtype
 uens = np.empty((nanals,2,Nt,Nt),dtype)
@@ -208,7 +206,6 @@ if savedata is not None:
     nc.grav = model.grav
     nc.umax = umax
     nc.jetexp = jetexp
-    nc.hmax = hmax
     nc.ztop = ztop
     nc.zmid = zmid
     nc.f = model.f
@@ -449,7 +446,7 @@ for ntime in range(nassim):
             masstend_diag+=model.masstendvar/nanals
     else:
         # use joblib to run ens members on different cores (N_JOBS env var sets number of tasks).
-        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,hmax=hmax) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         masstend_diag=0.
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
