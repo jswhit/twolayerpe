@@ -22,6 +22,7 @@ class Fouriert(object):
         else:
             dtype = 'float64'
             dtypec = 'complex128'
+        self.dtype = dtype; self.dtypec = dtypec
         self.precision = precision
         # set up pyfftw objects for transforms
         self.rfft2=pyfftw.builders.rfft2(pyfftw.empty_aligned((2,self.Nt,self.Nt), dtype=dtype),\
