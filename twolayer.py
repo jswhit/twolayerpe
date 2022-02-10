@@ -85,8 +85,8 @@ class TwoLayer(object):
         lyrthkspec = (self.theta1/self.grav)*lyrthkspec # convert from exner function to height units (m)
         # set area mean in grid space to state of rest value
         lyrthkg = self.ft.spectogrd(lyrthkspec)
-        lyrthkg[0,...] = lyrthkg[0,...] - lyrthkg[0,...].mean() + self.ztop - self.zmid
-        lyrthkg[1,...] = lyrthkg[1,...] - lyrthkg[1,...].mean() + self.zmid
+        lyrthkg[0,...] = lyrthkg[0,...] - lyrthkg[0,...].mean() + self.zmid
+        lyrthkg[1,...] = lyrthkg[1,...] - lyrthkg[1,...].mean() + self.ztop - self.zmid
         lyrthkspec = self.ft.grdtospec(lyrthkg)
         return lyrthkspec
 
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     ft = Fouriert(N,L,threads=threads)
 
     # create model instance, override default parameters.
-    model=TwoLayer(ft,dt,theta2=330,umax=15,jetexp=2,hmax=-1500)
+    model=TwoLayer(ft,dt,umax=15,jetexp=2,hmax=-1500)
 
     # vort, div initial conditions
     dtype = model.dtype
