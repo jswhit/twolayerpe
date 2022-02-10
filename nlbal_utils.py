@@ -56,9 +56,9 @@ if __name__ == "__main__":
     print(dz[0].mean(),dz[1].mean(),zmid,ztop-zmid)
     
     ft = Fouriert(N,L)
-    dzbal = nlbalance(ft,u,v,theta2=theta2)
+    dzbal = nlbalance(ft,u,v,theta1=theta1,theta2=theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
 
-    nlevplot = -1
+    nlevplot = 1
     dzplot = dz[nlevplot]
     dzbalplot = dzbal[nlevplot]
     dzmin=0
@@ -80,11 +80,14 @@ if __name__ == "__main__":
     print(dzunbalplot.min(), dzunbalplot.max())
     plt.figure()
     plt.imshow(dzplot,cmap=plt.cm.bwr,vmin=dzmin,vmax=dzmax,interpolation="nearest")
+    plt.colorbar()
     plt.title('%s layer thickness' % levname)
     plt.figure()
     plt.imshow(dzbalplot,cmap=plt.cm.bwr,vmin=dzmin,vmax=dzmax,interpolation="nearest")
+    plt.colorbar()
     plt.title('balanced %s layer thickness' % levname)
     plt.figure()
     plt.imshow(dzunbalplot,cmap=plt.cm.bwr,vmin=-dzunbalmax,vmax=dzunbalmax,interpolation="nearest")
+    plt.colorbar()
     plt.title('unbalanced %s layer thickness' % levname)
     plt.show()
