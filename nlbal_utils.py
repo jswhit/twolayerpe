@@ -4,15 +4,10 @@ def nlbalance(ft,u,vg,orog=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mea
     # grav: gravity
     # theta1,theta2: pot temp in each layer
     # dz1mean, dz2mean: area mean layer thicknesses (state of rest)
-    # orog: orography
     # u,vg: winds in each layer
     # returns dz, layer thickness of each layer
     # solve nonlinear balance eqn to get layer thickness given winds
     dzspec = np.zeros((2,ft.N,ft.N//2+1), ft.dtypec)
-    if orog is None:
-        phisspec = np.zeros(dzspec[0].shape, vrtspec.dtype)
-    else:
-        phisspec = ft.grdtospec(grav*orog)
     vrtspec, divspec = ft.getvrtdivspec(u,vg)
     vrt = ft.spectogrd(vrtspec)
     tmp1 = u*(vrt+f); tmp2 = vg*(vrt+f)
@@ -20,7 +15,7 @@ def nlbalance(ft,u,vg,orog=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mea
     tmpspec2 = ft.grdtospec(0.5*(u**2+vg**2))
     mspec = ft.invlap*tmpspec1 - tmpspec2
     mstream = ft.spectogrd(mspec)
-    dzspec[0,...] = (mspec[0,...]-phisspec)/theta1
+    dzspec[0,...] = mspec[0,...]/theta1
     dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(theta2-theta1)
     dzspec[0,...] = dzspec[0,...] - dzspec[1,...]
     dzspec = (theta1/grav)*dzspec # convert from exner function to height units (m)
@@ -54,33 +49,42 @@ if __name__ == "__main__":
     N = nc.N
     Nt = nc.Nt
     L = nc.L
-    u = nc['u'][-1]
-    v = nc['v'][-1]
-    dz = nc['dz'][-1]
+    ntime = -1
+    u = nc['u'][ntime]
+    v = nc['v'][ntime]
+    dz = nc['dz'][ntime]
     print(dz[0].mean(),dz[1].mean(),zmid,ztop-zmid)
-    l = 2.*np.pi / L
-    orog = nc.hmax*np.sin(0.5*l*y)
-    orog = orog - orog.mean()
     
     ft = Fouriert(N,L)
-    dzbal = nlbalance(ft,u,v,orog=orog)
-    print(dzbal[0].min(), dzbal[0].max())
-    print(dzbal[1].min(), dzbal[1].max())
+    dzbal = nlbalance(ft,u,v,theta2=theta2)
 
-    nlevplot = 0
-    if nlevplot:
+    nlevplot = -1
+    dzplot = dz[nlevplot]
+    dzbalplot = dzbal[nlevplot]
+    dzmin=0
+    dzmax=1.e4
+    dzunbalmax=40
+    if nlevplot == 1:
         levname='upper'
-    else: 
+    elif nlevplot == 0:
         levname='lower'
+    elif nlevplot < 0:
+        levname='total'
+        dzplot = ztop - dz.sum(axis=0)
+        dzbalplot = ztop - dzbal.sum(axis=0)
+        dzmin = -200
+        dzmax = 200.
+        dzunbalmax = 2
+        
+    dzunbalplot = dzplot-dzbalplot
+    print(dzunbalplot.min(), dzunbalplot.max())
     plt.figure()
-    plt.imshow(dz[nlevplot],cmap=plt.cm.jet,vmin=0,vmax=10.e3,interpolation="nearest")
+    plt.imshow(dzplot,cmap=plt.cm.bwr,vmin=dzmin,vmax=dzmax,interpolation="nearest")
     plt.title('%s layer thickness' % levname)
     plt.figure()
-    plt.imshow(dzbal[nlevplot],cmap=plt.cm.jet,vmin=0,vmax=10.e3,interpolation="nearest")
+    plt.imshow(dzbalplot,cmap=plt.cm.bwr,vmin=dzmin,vmax=dzmax,interpolation="nearest")
     plt.title('balanced %s layer thickness' % levname)
     plt.figure()
-    dzunbal = dz-dzbal
-    print(dzunbal.min(),dzunbal.max())
-    plt.imshow(dzunbal[nlevplot],cmap=plt.cm.bwr,vmin=-20,vmax=20.,interpolation="nearest")
+    plt.imshow(dzunbalplot,cmap=plt.cm.bwr,vmin=-dzunbalmax,vmax=dzunbalmax,interpolation="nearest")
     plt.title('unbalanced %s layer thickness' % levname)
     plt.show()
