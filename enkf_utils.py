@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.linalg import eigh, cho_solve, cho_factor
+from scipy.linalg import eigh
 from joblib import Parallel, delayed
 
 # function definitions.
