@@ -59,7 +59,7 @@ profile = False # turn on profiling?
 use_letkf = True # if False, use serial EnSRF
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
-posterior_stats = True
+posterior_stats = False
 precision = 'single'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
@@ -93,6 +93,7 @@ jetexp = nc_climo.jetexp
 umax = nc_climo.umax
 theta1 = nc_climo.theta1
 theta2 = nc_climo.theta2
+f = nc_climo.f
 zmid = nc_climo.zmid
 ztop = nc_climo.ztop
 tdrag = nc_climo.tdrag
@@ -422,13 +423,13 @@ for ntime in range(nassim):
     dzens = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
     # posterior stats
-    #if posterior_stats:
-    #    vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-    #    zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens,vens,dzens,\
-    #    u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-    #    print("%s %g %g %g %g %g %g %g %g" %\
-    #    (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-    #     zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a))
+    if posterior_stats:
+        vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
+        zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens,vens,dzens,\
+        u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
+        print("%s %g %g %g %g %g %g %g %g" %\
+        (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
+         zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a))
 
     # save data.
     if savedata is not None:
