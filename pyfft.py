@@ -8,7 +8,7 @@ class Fouriert(object):
 
     Jeffrey S. Whitaker <jeffrey.s.whitaker@noaa.gov>
     """
-    def __init__(self,N,L,threads=1,precision='single'):
+    def __init__(self,N,L,threads=1,precision='single',planner='FFTW_ESTIMATE',nlevs=2):
         """initialize
         N: number of grid points (spectral truncation x 2)
         L: domain size"""
@@ -24,15 +24,16 @@ class Fouriert(object):
             dtypec = 'complex128'
         self.dtype = dtype; self.dtypec = dtypec
         self.precision = precision
+        self.nlevs = nlevs
         # set up pyfftw objects for transforms
-        self.rfft2=pyfftw.builders.rfft2(pyfftw.empty_aligned((2,self.Nt,self.Nt), dtype=dtype),\
-                                          axes=(-2, -1), threads=threads, planner_effort='FFTW_ESTIMATE')
-        self.irfft2=pyfftw.builders.irfft2(pyfftw.empty_aligned((2,self.Nt,self.Nt//2+1), dtype=dtypec),\
-                                          axes=(-2, -1), threads=threads, planner_effort='FFTW_ESTIMATE')
+        self.rfft2=pyfftw.builders.rfft2(pyfftw.empty_aligned((nlevs,self.Nt,self.Nt), dtype=dtype),\
+                                          axes=(-2, -1), threads=threads, planner_effort=planner)
+        self.irfft2=pyfftw.builders.irfft2(pyfftw.empty_aligned((nlevs,self.Nt,self.Nt//2+1), dtype=dtypec),\
+                                          axes=(-2, -1), threads=threads, planner_effort=planner)
         self.rfft2_2d=pyfftw.builders.rfft2(pyfftw.empty_aligned((self.Nt,self.Nt), dtype=dtype),\
-                                          axes=(-2, -1), threads=threads, planner_effort='FFTW_ESTIMATE')
+                                          axes=(-2, -1), threads=threads, planner_effort=planner
         self.irfft2_2d=pyfftw.builders.irfft2(pyfftw.empty_aligned((self.Nt,self.Nt//2+1), dtype=dtypec),\
-                                          axes=(-2, -1), threads=threads, planner_effort='FFTW_ESTIMATE')
+                                          axes=(-2, -1), threads=threads, planner_effort=planner)
         # spectral stuff
         dk = 2.*np.pi/self.L
         #k =  dk*np.arange(0.,self.N//2+1)
