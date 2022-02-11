@@ -11,10 +11,7 @@ class TwoLayer(object):
 
     def __init__(self,ft,dt,theta1=300,theta2=330,f=1.e-4,\
                  zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=0):
-        if ft.precision == 'single':
-            dtype = 'float32'
-        else:
-            dtype = 'float64'
+        dtype = ft.precision
         # setup model parameters
         self.dtype = dtype
         self.theta1 = np.array(theta1,dtype) # lower layer pot. temp. (K)
@@ -185,9 +182,9 @@ if __name__ == "__main__":
     import os
 
     # grid, time step info
-    N = 64  
+    N = 128 
     L = 20000.e3
-    dt = 600 # time step in seconds
+    dt = 300 # time step in seconds
 
     # get OMP_NUM_THREADS (threads to use) from environment.
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
@@ -219,7 +216,7 @@ if __name__ == "__main__":
 
     # run model, animate pv
     nout = int(6.*3600./model.dt) # plot interval
-    nsteps = int(100*86400./model.dt)//nout-2 # number of time steps to animate
+    nsteps = int(200*86400./model.dt)//nout-2 # number of time steps to animate
 
     fig = plt.figure(figsize=(16,8))
     ax = fig.add_subplot(121); ax.axis('off')

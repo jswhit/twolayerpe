@@ -130,7 +130,7 @@ if __name__ == "__main__":
     filename = sys.argv[1]
     nc = Dataset(filename)
 
-    ft = Fouriert(nc.N,nc.L)
+    ft = Fouriert(nc.N,nc.L,precision=str(nc['dz'].dtype))
 
     ntime = -1
     u = nc['u'][ntime]

@@ -60,7 +60,7 @@ use_letkf = True # if False, use serial EnSRF
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
-precision = 'single'
+precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
 nassim = 200 # assimilation times to run

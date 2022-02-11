@@ -8,7 +8,7 @@ class Fouriert(object):
 
     Jeffrey S. Whitaker <jeffrey.s.whitaker@noaa.gov>
     """
-    def __init__(self,N,L,threads=1,precision='single',planner='FFTW_ESTIMATE',nlevs=2):
+    def __init__(self,N,L,threads=1,precision='float32',planner='FFTW_ESTIMATE',nlevs=2):
         """initialize
         N: number of grid points (spectral truncation x 2)
         L: domain size"""
@@ -16,12 +16,14 @@ class Fouriert(object):
         self.threads = threads
         self.N = N
         self.Nt = 3*N//2
-        if precision == 'single':
-            dtype = 'float32'
+        if precision == 'float32':
+            dtype = precision
             dtypec = 'complex64'
-        else:
-            dtype = 'float64'
+        elif precision == 'float64':
+            dtype = precision
             dtypec = 'complex128'
+        else:
+            raise ValueError("precision must be 'float32' or 'float64'")
         self.dtype = dtype; self.dtypec = dtypec
         self.precision = precision
         self.nlevs = nlevs
