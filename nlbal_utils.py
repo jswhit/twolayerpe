@@ -82,14 +82,14 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         # horizontal vorticity flux
         tmpg1 = u*(vrt+f); tmpg2 = v*(vrt+f)
         # add lower layer drag contribution
-        tmpg1[0] += vrot[0]/tdrag
-        tmpg2[0] += -urot[0]/tdrag
+        tmpg1[0] += v[0]/tdrag
+        tmpg2[0] += -u[0]/tdrag
         # add diabatic momentum flux contribution
         # (this version averages vertical flux at top
         # and bottom of each layer)
         # same as 'improved' mc2RSW model (DOI: 10.1002/qj.3292)
-        tmpg1 += 0.5*(vrot[1]-vrot[0])*massflux/dz
-        tmpg2 -= 0.5*(urot[1]-urot[0])*massflux/dz
+        tmpg1 += 0.5*(v[1]-v[0])*massflux/dz
+        tmpg2 -= 0.5*(u[1]-u[0])*massflux/dz
         # compute vort flux contributions to vorticity and divergence tend.
         ddivdtspec, dvrtdtspec = ft.getvrtdivspec(tmpg1,tmpg2)
         dvrtdtspec *= -1
@@ -97,7 +97,6 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         # infer layer thickness tendency from d/dt of balance eqn.
         ddzdt = nlbalance_tend(ft,vrt,dvrtdt,f=f,theta1=theta1,theta2=theta2,grav=grav)
         # new estimate of divergence from continuity eqn
-        tmpg1[0] = -massflux; tmpg1[1] = massflux
         divnew = -(1./dz)*(ddzdt + u*dzx + v*dzy)
         divnew = divnew - divnew.mean()
         divdiff = (divnew-div).copy()
@@ -160,10 +159,10 @@ if __name__ == "__main__":
     
     dzbal = nlbalance(ft,vrt,theta1=model.theta1,theta2=model.theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
     divbal = np.zeros(div.shape, div.dtype) # initialize guess as zero
-    divbal = baldiv(ft,vrt,div,dzbal,dzref=model.dzref,f=model.f,theta1=model.theta1,theta2=model.theta2,\
+    divbal = baldiv(ft,vrt,div,dzbal,dzref=None,f=model.f,theta1=model.theta1,theta2=model.theta2,\
              grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.02,eps=1.e-8)
 
-    nlevplot = -1
+    nlevplot = 0
     dzplot = dz[nlevplot]
     dzbalplot = dzbal[nlevplot]
     divplot = div[nlevplot]
