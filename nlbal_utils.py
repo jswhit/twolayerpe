@@ -45,7 +45,6 @@ def nlbalance2(ft,vrt,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2
     dzspec = (theta1/grav)*dzspec # convert from exner function to height units (m)
     # set area mean in grid space to state of rest value
     dz = ft.spectogrd(dzspec)
-    dz = ft.spectogrd(dzspec)
     dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
     dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
     return dz
