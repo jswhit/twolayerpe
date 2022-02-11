@@ -78,9 +78,9 @@ def nlbalance_tend(ft,vrt,dvrtdt,f=1.e-4,theta1=300,theta2=330,grav=9.8066):
     return ft.spectogrd(dzspec)
 
 def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,nitermax=10,relax=1.0,eps=1.e-9,dzmean=5.e3):
-    # computes balanced divergence given
+    # computes balanced divergence with iterative algorithm
     # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
-    # div on input is initial guess divergence (gridded).
+    # div on input is initial guess divergence (gridded) - can be set to zero.
     vrtspec = ft.grdtospec(vrt)
     psispec = ft.invlap*vrtspec
     urotspec = -ft.il*psispec; vrotspec = ft.ik*psispec
@@ -180,10 +180,10 @@ if __name__ == "__main__":
     
     dzbal = nlbalance(ft,vrt,theta1=model.theta1,theta2=model.theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
     divbal = np.zeros(div.shape, div.dtype) # initialize guess as zero
-    divbal = baldiv(ft,vrt,div,dzbal,dzref=None,f=model.f,theta1=model.theta1,theta2=model.theta2,\
+    divbal = baldiv(ft,vrt,divbal,dzbal,dzref=None,f=model.f,theta1=model.theta1,theta2=model.theta2,\
              grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.02,eps=1.e-8)
 
-    nlevplot = 0
+    nlevplot = 1
     dzplot = dz[nlevplot]
     dzbalplot = dzbal[nlevplot]
     divplot = div[nlevplot]
