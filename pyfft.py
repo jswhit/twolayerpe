@@ -74,8 +74,8 @@ class Fouriert(object):
         vspec = self.ik*psispec + self.il*chispec
         return self.spectogrd(uspec), self.spectogrd(vspec)
     def getgrad(self,data):
-        dataspec = ft.grdtospec(data)
-        return ft.spectogrd(self.ik*dataspec);ft.spectogrd(self.il*dataspec)
+        dataspec = self.grdtospec(data)
+        return self.spectogrd(self.ik*dataspec); self.spectogrd(self.il*dataspec)
     def getvrtdivspec(self,u,v):
         """compute spectral coeffs of vorticity and divergence from wind vector"""
         uspec = self.grdtospec(u); vspec = self.grdtospec(v)
