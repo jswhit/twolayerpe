@@ -25,7 +25,7 @@ def nlbalance(ft,u,v,orog=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean
     dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
     return dz
 
-def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,nitermax=10):
+def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,nitermax=10,relax=1.0,eps=1.e-9):
     # computes balanced divergence given
     # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
     # div on input is initial guess divergence (gridded).
@@ -38,7 +38,7 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         chispec = ft.invlap*divspec
         udivspec =  ft.ik*chispec; vdivspec = ft.il*chispec
         udiv = ft.spectogrd(udivspec); vdiv = ft.spectogrd(vdivspec)
-        u = urot+udiv; v = vrot+vdic
+        u = urot+udiv; v = vrot+vdiv
         # compute initial guess of vorticity tendency 
         # first, transform fields from spectral space to grid space.
         # diabatic mass flux due to interface relaxation.
@@ -47,10 +47,10 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         else:
             massflux = np.zeros((ft.Nt,ft.Nt),ft.dtype)
         # horizontal vorticity flux
-        tmpg1 = u*(vrtg+f); tmpg2 = v*(vrtg+f)
+        tmpg1 = u*(vrt+f); tmpg2 = v*(vrt+f)
         # add lower layer drag contribution
-        tmpg1[0] += v[0]/self.tdrag
-        tmpg2[0] += -u[0]/self.tdrag
+        tmpg1[0] += v[0]/tdrag
+        tmpg2[0] += -u[0]/tdrag
         # add diabatic momentum flux contribution
         # (this version averages vertical flux at top
         # and bottom of each layer)
@@ -61,12 +61,19 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         ddivdtspec, dvrtdtspec = ft.getvrtdivspec(tmpg1,tmpg2)
         dvrtdtspec *= -1
         # get rotational wind tendency.
-        dudt, dvdt = ft.getuv(dvrtdtspec)
+        ddivdtspec = 0.
+        dudt, dvdt = ft.getuv(dvrtdtspec,ddivdtspec)
         # infer layer thickness tendency from d/dt of balance eqn.
         ddzdt = nlbalance(ft,dudt,dvdt,orog=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=0.,dz2mean=0.)
         # new estimate of divergence from continuity eqn
         tmpg1[0] = massflux; tmpg1[1] = -massflux
-        divnew = -(1./dz)*(dzdt + u*dzdz + v*dzdy + tmpg1)
+        divnew = -(1./dz)*(ddzdt + u*dzx + v*dzy + tmpg1)
+        divdiff = (divnew-div).copy()
+        div = div + relax*divdiff
+        print(niter,(np.abs(divdiff)).mean(),(np.abs(div)).mean())
+        if (np.abs(divdiff)).mean() < eps: break
+    return div
+        
 
 if __name__ == "__main__":
     import matplotlib
@@ -81,22 +88,35 @@ if __name__ == "__main__":
     filename = sys.argv[1]
     nc = Dataset(filename)
 
+    ft = Fouriert(nc.N,nc.L)
+
     ntime = -1
     u = nc['u'][ntime]
     v = nc['v'][ntime]
+    vrtspec, divspec = ft.getvrtdivspec(u,v)
+    vrt = ft.spectogrd(vrtspec)
+    div = ft.spectogrd(divspec)
     dz = nc['dz'][ntime]
     print(dz[0].mean(),dz[1].mean(),nc.zmid,nc.ztop-nc.zmid)
     
-    ft = Fouriert(nc.N,nc.L)
     model = TwoLayer(ft,nc.dt,zmid=nc.zmid,ztop=nc.ztop,tdrag=nc.tdrag,tdiab=nc.tdiab,\
     umax=nc.umax,jetexp=nc.jetexp,theta1=nc.theta1,theta2=nc.theta2,diff_efold=nc.diff_efold)
-    dzbal = nlbalance(ft,u,v,theta1=nc.theta1,theta2=nc.theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
+    nc.close()
+    dzbal = nlbalance(ft,u,v,theta1=model.theta1,theta2=model.theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
+    divbal = np.zeros(div.shape, div.dtype) # initialize guess as zero
+    divbal = baldiv(ft,vrt,divbal,dz,dzref=model.dzref,f=model.f,theta1=model.theta1,theta2=model.theta2,\
+             grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.03,eps=1.e-8)
 
     nlevplot = 1
     dzplot = dz[nlevplot]
     dzbalplot = dzbal[nlevplot]
+    divplot = div[nlevplot]
+    divbalplot = divbal[nlevplot]
     dzmin=0
     dzmax=1.e4
+    divmin=-1.e-5
+    divmax=1.e-5
+    divunbalmax=divmax
     dzunbalmax=40
     if nlevplot == 1:
         levname='upper'
@@ -112,16 +132,35 @@ if __name__ == "__main__":
         
     dzunbalplot = dzplot-dzbalplot
     print(dzunbalplot.min(), dzunbalplot.max())
+    #plt.figure()
+    #plt.imshow(dzplot,cmap=plt.cm.bwr,vmin=dzmin,vmax=dzmax,interpolation="nearest")
+    #plt.colorbar()
+    #plt.title('%s layer thickness' % levname)
+    #plt.figure()
+    #plt.imshow(dzbalplot,cmap=plt.cm.bwr,vmin=dzmin,vmax=dzmax,interpolation="nearest")
+    #plt.colorbar()
+    #plt.title('balanced %s layer thickness' % levname)
+    #plt.figure()
+    #plt.imshow(dzunbalplot,cmap=plt.cm.bwr,vmin=-dzunbalmax,vmax=dzunbalmax,interpolation="nearest")
+    #plt.colorbar()
+    #plt.title('unbalanced %s layer thickness' % levname)
+
+    divunbalplot = divplot-divbalplot
+    print('div min/max',divplot.min(), divplot.max())
+    print('divbal min/max',divbalplot.min(), divbalplot.max())
+    print(divunbalplot.min(), divunbalplot.max())
     plt.figure()
-    plt.imshow(dzplot,cmap=plt.cm.bwr,vmin=dzmin,vmax=dzmax,interpolation="nearest")
+    plt.imshow(divplot,cmap=plt.cm.bwr,vmin=divmin,vmax=divmax,interpolation="nearest")
     plt.colorbar()
-    plt.title('%s layer thickness' % levname)
+    plt.title('%s layer divergence' % levname)
     plt.figure()
-    plt.imshow(dzbalplot,cmap=plt.cm.bwr,vmin=dzmin,vmax=dzmax,interpolation="nearest")
+    plt.imshow(divbalplot,cmap=plt.cm.bwr,vmin=divmin,vmax=divmax,interpolation="nearest")
     plt.colorbar()
-    plt.title('balanced %s layer thickness' % levname)
+    plt.title('balanced %s layer divergence' % levname)
     plt.figure()
-    plt.imshow(dzunbalplot,cmap=plt.cm.bwr,vmin=-dzunbalmax,vmax=dzunbalmax,interpolation="nearest")
+    plt.imshow(divunbalplot,cmap=plt.cm.bwr,vmin=-divunbalmax,vmax=divunbalmax,interpolation="nearest")
     plt.colorbar()
-    plt.title('unbalanced %s layer thickness' % levname)
+    plt.title('unbalanced %s layer divergence' % levname)
+    plt.show()
+
     plt.show()
