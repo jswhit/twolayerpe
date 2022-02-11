@@ -1,4 +1,7 @@
+# utilities for computing balanced flow (using nonlinear balance equation)
+
 def nlbalance(ft,vrt,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2mean=5.e3):
+    # solve nonlinear balance eqn to get layer thickness given vorticity.
     # ft: Fourier transform object
     # f: coriolis param
     # grav: gravity
@@ -27,7 +30,7 @@ def nlbalance(ft,vrt,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2m
     return dz
 
 def nlbalance2(ft,vrt,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2mean=5.e3):
-    # solve nonlinear balance eqn to get layer thickness given vorticity.
+    # solve nonlinear balance eqn to get layer thickness given vorticity (version 2).
     vrtspec = ft.grdtospec(vrt)
     divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
@@ -55,7 +58,8 @@ def nlbalance_tend(ft,vrt,dvrtdt,f=1.e-4,theta1=300,theta2=330,grav=9.8066):
     # vrt: vorticity in each layer
     # dvrtdt: vorticity tendency in each layer
     # returns dz, layer thickness of each layer
-    # solve nonlinear balance eqn to get layer thickness given vorticity
+    # solve tendency of nonlinear balance eqn to get layer thickness tendency
+    # given vorticity and vorticity tendency.
     dvrtspecdt = ft.grdtospec(dvrtdt)
     dpsispecdt = ft.invlap*dvrtspecdt
     vrtspec = ft.grdtospec(vrt)
@@ -145,40 +149,17 @@ if __name__ == "__main__":
     ntime = -1
     u = nc['u'][ntime]
     v = nc['v'][ntime]
+    dz = nc['dz'][ntime]
     vrtspec, divspec = ft.getvrtdivspec(u,v)
     vrt = ft.spectogrd(vrtspec); div = ft.spectogrd(divspec)
-    dz = nc['dz'][ntime]
-    print(dz[0].mean(),dz[1].mean(),nc.zmid,nc.ztop-nc.zmid)
 
     model = TwoLayer(ft,nc.dt,zmid=nc.zmid,ztop=nc.ztop,tdrag=nc.tdrag,tdiab=nc.tdiab,\
     umax=nc.umax,jetexp=nc.jetexp,theta1=nc.theta1,theta2=nc.theta2,diff_efold=nc.diff_efold)
     nc.close()
 
-    # compute layer thickness tendency
-    #tmp1 = u*dz; tmp2 = v*dz
-    #tmpspec, ddzdtspec = ft.getvrtdivspec(tmp1,tmp2)
-    #ddzdtspec *= -1
-    #ddzdt = ft.spectogrd(ddzdtspec)
-    ##ddzdt[0] += (model.dzref[1] - dz[1])/model.tdiab
-    ##ddzdt[1] -= (model.dzref[1] - dz[1])/model.tdiab
-    #dzspec = ft.grdtospec(dz)
-    #dzx = ft.spectogrd(ft.ik*dzspec); dzy = ft.spectogrd(ft.il*dzspec)
-    ##tmp = ddzdt + u*dzx + v*dzy + div*dz
-    ##print(tmp.min(), tmp.max()) # should be zero
-    ##raise SystemExit
-    #div2 = -(1./dz)*(ddzdt + u*dzx + v*dzy)
-    #print(div.min(), div.max())
-    #print(div2.min(), div2.max())
-    #plt.figure()
-    #plt.imshow(div[1],cmap=plt.cm.bwr,vmin=-1.e-5,vmax=1.e-5,interpolation="nearest")
-    #plt.colorbar()
-    #plt.figure()
-    #plt.imshow(div2[1],cmap=plt.cm.bwr,vmin=-1.e-5,vmax=1.e-5,interpolation="nearest")
-    #plt.colorbar()
-    #plt.show()
-    #raise SystemExit
-    
+    # compute balanced layer thickness given vorticity.
     dzbal = nlbalance(ft,vrt,theta1=model.theta1,theta2=model.theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
+    # compute balanced divergence, given vorticity and balanced thickness.
     divbal = np.zeros(div.shape, div.dtype) # initialize guess as zero
     divbal = baldiv(ft,vrt,divbal,dzbal,dzref=None,f=model.f,theta1=model.theta1,theta2=model.theta2,\
              grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.02,eps=1.e-8)
