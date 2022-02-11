@@ -89,8 +89,7 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
     psispec = ft.invlap*vrtspec
     urotspec = -ft.il*psispec; vrotspec = ft.ik*psispec
     urot = ft.spectogrd(urotspec); vrot = ft.spectogrd(vrotspec)
-    dzspec = ft.grdtospec(dz)
-    dzx = ft.spectogrd(ft.ik*dzspec); dzy = ft.spectogrd(ft.il*dzspec)
+    dzx,dzy = ft.getgrad(dz)
     for niter in range(nitermax):
         divspec = ft.grdtospec(div)
         chispec = ft.invlap*divspec
@@ -160,7 +159,7 @@ if __name__ == "__main__":
     nc.close()
 
     # compute balanced layer thickness given vorticity.
-    dzbal = nlbalance(ft,vrt,theta1=model.theta1,theta2=model.theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
+    dzbal = nlbalance(ft,vrt,theta1=model.theta1,theta2=model.theta2,dz1mean=model.zmid,dz2mean=model.ztop-model.zmid)
     # compute balanced divergence, given vorticity and balanced thickness.
     divbal = np.zeros(div.shape, div.dtype) # initialize guess as zero
     divbal = baldiv(ft,vrt,divbal,dzbal,dzref=None,f=model.f,theta1=model.theta1,theta2=model.theta2,\
