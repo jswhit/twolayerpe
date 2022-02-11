@@ -30,7 +30,7 @@ def nlbalance(ft,vrt,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2m
     return dz
 
 def nlbalance2(ft,vrt,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2mean=5.e3):
-    # solve nonlinear balance eqn to get layer thickness given vorticity (version 2).
+    # solve nonlinear balance eqn to get layer thickness given vorticity (version 2, used for debugging).
     vrtspec = ft.grdtospec(vrt)
     divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
@@ -81,7 +81,7 @@ def nlbalance_tend(ft,vrt,dvrtdt,f=1.e-4,theta1=300,theta2=330,grav=9.8066):
     dzspec = (theta1/grav)*dzspec # convert from exner function to height units (m)
     return ft.spectogrd(dzspec)
 
-def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,nitermax=10,relax=1.0,eps=1.e-9,dzmean=5.e3):
+def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,nitermax=10,relax=1.0,eps=1.e-9):
     # computes balanced divergence with iterative algorithm
     # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
     # div on input is initial guess divergence (gridded) - can be set to zero.
@@ -123,11 +123,11 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         ddzdt = nlbalance_tend(ft,vrt,dvrtdt,f=f,theta1=theta1,theta2=theta2,grav=grav)
         # new estimate of divergence from continuity eqn
         divnew = -(1./dz)*(ddzdt + u*dzx + v*dzy)
-        divnew = divnew - divnew.mean()
+        divnew = divnew - divnew.mean() # remove area mean
         divdiff = (divnew-div).copy()
         div = div + relax*divdiff
-        print(niter,(np.abs(divdiff)).mean(),(np.abs(div)).mean())
-        if (np.abs(divdiff)).mean() < eps: break
+        print(niter, np.sqrt((divdiff**2).mean()), np.sqrt((div**2).mean()) )
+        if np.sqrt((divdiff**2).mean()) < eps: break
     return div
         
 
