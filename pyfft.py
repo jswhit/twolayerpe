@@ -31,7 +31,7 @@ class Fouriert(object):
         self.irfft2=pyfftw.builders.irfft2(pyfftw.empty_aligned((nlevs,self.Nt,self.Nt//2+1), dtype=dtypec),\
                                           axes=(-2, -1), threads=threads, planner_effort=planner)
         self.rfft2_2d=pyfftw.builders.rfft2(pyfftw.empty_aligned((self.Nt,self.Nt), dtype=dtype),\
-                                          axes=(-2, -1), threads=threads, planner_effort=planner
+                                          axes=(-2, -1), threads=threads, planner_effort=planner)
         self.irfft2_2d=pyfftw.builders.irfft2(pyfftw.empty_aligned((self.Nt,self.Nt//2+1), dtype=dtypec),\
                                           axes=(-2, -1), threads=threads, planner_effort=planner)
         # spectral stuff
@@ -73,6 +73,9 @@ class Fouriert(object):
         uspec = -self.il*psispec + self.ik*chispec
         vspec = self.ik*psispec + self.il*chispec
         return self.spectogrd(uspec), self.spectogrd(vspec)
+    def getgrad(self,data):
+        dataspec = ft.grdtospec(data)
+        return ft.spectogrd(self.ik*dataspec);ft.spectogrd(self.il*dataspec)
     def getvrtdivspec(self,u,v):
         """compute spectral coeffs of vorticity and divergence from wind vector"""
         uspec = self.grdtospec(u); vspec = self.grdtospec(v)

@@ -1,18 +1,18 @@
-def nlbalance(ft,u,vg,orog=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2mean=5.e3):
+def nlbalance(ft,u,v,orog=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2mean=5.e3):
     # ft: Fourier transform object
     # f: coriolis param
     # grav: gravity
     # theta1,theta2: pot temp in each layer
     # dz1mean, dz2mean: area mean layer thicknesses (state of rest)
-    # u,vg: winds in each layer
+    # u,v: winds in each layer
     # returns dz, layer thickness of each layer
     # solve nonlinear balance eqn to get layer thickness given winds
     dzspec = np.zeros((2,ft.N,ft.N//2+1), ft.dtypec)
-    vrtspec, divspec = ft.getvrtdivspec(u,vg)
+    vrtspec, divspec = ft.getvrtdivspec(u,v)
     vrt = ft.spectogrd(vrtspec)
-    tmp1 = u*(vrt+f); tmp2 = vg*(vrt+f)
+    tmp1 = u*(vrt+f); tmp2 = v*(vrt+f)
     tmpspec1, tmpspec2 = ft.getvrtdivspec(tmp1,tmp2)
-    tmpspec2 = ft.grdtospec(0.5*(u**2+vg**2))
+    tmpspec2 = ft.grdtospec(0.5*(u**2+v**2))
     mspec = ft.invlap*tmpspec1 - tmpspec2
     mstream = ft.spectogrd(mspec)
     dzspec[0,...] = mspec[0,...]/theta1
@@ -25,6 +25,49 @@ def nlbalance(ft,u,vg,orog=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mea
     dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
     return dz
 
+def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,nitermax=10):
+    # computes balanced divergence given
+    # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
+    # div on input is initial guess divergence (gridded).
+    psispec = ft.invlap*vrtspec
+    urotspec = -ft.il*psispec; vrotspec = ft.ik*psispec
+    urot = ft.spectogrd(urotspec); vrot = ft.spectogrd(vrotspec)
+    dzx, dzy = ft.getgrad(dz)
+    for niter in range(nitermax):
+        divspec = ft.grdtospec(div)
+        chispec = ft.invlap*divspec
+        udivspec =  ft.ik*chispec; vdivspec = ft.il*chispec
+        udiv = ft.spectogrd(udivspec); vdiv = ft.spectogrd(vdivspec)
+        u = urot+udiv; v = vrot+vdic
+        # compute initial guess of vorticity tendency 
+        # first, transform fields from spectral space to grid space.
+        # diabatic mass flux due to interface relaxation.
+        if dzref is not None:
+            massflux = (dzref[1] - dz[1])/tdiab
+        else:
+            massflux = np.zeros((ft.Nt,ft.Nt),ft.dtype)
+        # horizontal vorticity flux
+        tmpg1 = u*(vrtg+f); tmpg2 = v*(vrtg+f)
+        # add lower layer drag contribution
+        tmpg1[0] += v[0]/self.tdrag
+        tmpg2[0] += -u[0]/self.tdrag
+        # add diabatic momentum flux contribution
+        # (this version averages vertical flux at top
+        # and bottom of each layer)
+        # same as 'improved' mc2RSW model (DOI: 10.1002/qj.3292)
+        tmpg1 += 0.5*(vrot[1]-vrot[0])*massflux/dz
+        tmpg2 -= 0.5*(urot[1]-urot[0])*massflux/dz
+        # compute vort flux contributions to vorticity and divergence tend.
+        ddivdtspec, dvrtdtspec = ft.getvrtdivspec(tmpg1,tmpg2)
+        dvrtdtspec *= -1
+        # get rotational wind tendency.
+        dudt, dvdt = ft.getuv(dvrtdtspec)
+        # infer layer thickness tendency from d/dt of balance eqn.
+        ddzdt = nlbalance(ft,dudt,dvdt,orog=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=0.,dz2mean=0.)
+        # new estimate of divergence from continuity eqn
+        tmpg1[0] = massflux; tmpg1[1] = -massflux
+        divnew = -(1./dz)*(dzdt + u*dzdz + v*dzdy + tmpg1)
+
 if __name__ == "__main__":
     import matplotlib
     matplotlib.use('qt5agg')
@@ -32,31 +75,22 @@ if __name__ == "__main__":
     import sys
     import numpy as np
     from pyfft import Fouriert
+    from twolayer import TwoLayer
 
     from netCDF4 import Dataset
     filename = sys.argv[1]
     nc = Dataset(filename)
 
-    x = nc.variables['x'][:]
-    y = nc.variables['y'][:]
-    x, y = np.meshgrid(x, y)
-    theta1 = nc.theta1
-    theta2 = nc.theta2
-    f = nc.f
-    grav = nc.grav
-    zmid = nc.zmid
-    ztop = nc.ztop
-    N = nc.N
-    Nt = nc.Nt
-    L = nc.L
     ntime = -1
     u = nc['u'][ntime]
     v = nc['v'][ntime]
     dz = nc['dz'][ntime]
-    print(dz[0].mean(),dz[1].mean(),zmid,ztop-zmid)
+    print(dz[0].mean(),dz[1].mean(),nc.zmid,nc.ztop-nc.zmid)
     
-    ft = Fouriert(N,L)
-    dzbal = nlbalance(ft,u,v,theta1=theta1,theta2=theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
+    ft = Fouriert(nc.N,nc.L)
+    model = TwoLayer(ft,nc.dt,zmid=nc.zmid,ztop=nc.ztop,tdrag=nc.tdrag,tdiab=nc.tdiab,\
+    umax=nc.umax,jetexp=nc.jetexp,theta1=nc.theta1,theta2=nc.theta2,diff_efold=nc.diff_efold)
+    dzbal = nlbalance(ft,u,v,theta1=nc.theta1,theta2=nc.theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
 
     nlevplot = 1
     dzplot = dz[nlevplot]
