@@ -126,8 +126,10 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         divnew = divnew - divnew.mean() # remove area mean
         divdiff = (divnew-div).copy()
         div = div + relax*divdiff
-        if verbose: print(niter, np.sqrt((divdiff**2).mean()), np.sqrt((div**2).mean()) )
-        if np.sqrt((divdiff**2).mean()) < eps: break
+        divdiffmean = np.sqrt((divdiff**2).mean())
+        divmean = np.sqrt((div**2).mean())
+        if verbose: print(niter, divdiffmean, divdiffmean/divmean )
+        if divdiffmean/divmean < eps: break
     return div
         
 
@@ -162,7 +164,7 @@ if __name__ == "__main__":
     # compute balanced divergence, given vorticity and balanced thickness.
     divbal = np.zeros(div.shape, div.dtype) # initialize guess as zero
     divbal = baldiv(ft,vrt,divbal,dzbal,dzref=None,f=model.f,theta1=model.theta1,theta2=model.theta2,\
-             grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.02,eps=1.e-9,verbose=True)
+             grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.02,eps=1.e-2,verbose=True)
 
     nlevplot = 1
     dzplot = dz[nlevplot]
