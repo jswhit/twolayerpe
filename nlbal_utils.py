@@ -15,7 +15,6 @@ def nlbalance(ft,vrt,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2m
     psixy = ft.spectogrd(-ft.k*ft.l*psispec)
     tmpspec = f*vrtspec + 2.*ft.grdtospec(psixx*psiyy - psixy**2)
     mspec = ft.invlap*tmpspec
-    #mspec = f*ft.invlap*vrtspec # linear balance
     dzspec = np.zeros(mspec.shape, mspec.dtype)
     dzspec[0,...] = mspec[0,...]/theta1
     dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(theta2-theta1)
@@ -50,7 +49,6 @@ def nlbalance_tend(ft,vrt,dvrtdt,f=1.e-4,theta1=300,theta2=330,grav=9.8066):
     dpsixydt = ft.spectogrd(-ft.k*ft.l*dpsispecdt)
     tmpspec = f*dvrtspecdt + 2.*ft.grdtospec(dpsixxdt*psiyy + psixx*dpsiyydt - 2*psixy*dpsixydt)
     mspec = ft.invlap*tmpspec
-    #mspec = f*ft.invlap*dvrtspecdt # linear balance
     dzspec = np.zeros(mspec.shape, mspec.dtype)
     dzspec[0,...] = mspec[0,...]/theta1
     dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(theta2-theta1)
@@ -98,17 +96,9 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         dvrtdt = ft.spectogrd(dvrtdtspec)
         # infer layer thickness tendency from d/dt of balance eqn.
         ddzdt = nlbalance_tend(ft,vrt,dvrtdt,f=f,theta1=theta1,theta2=theta2,grav=grav)
-        #print(ddzdt.min(), ddzdt.max())
-        #import matplotlib.pyplot as plt
-        #plt.figure()
-        #plt.imshow(ddzdt[1],cmap=plt.cm.bwr,vmin=-0.05,vmax=0.05,interpolation="nearest")
-        #plt.colorbar()
-        #plt.show()
-        #raise SystemExit
         # new estimate of divergence from continuity eqn
         tmpg1[0] = -massflux; tmpg1[1] = massflux
         divnew = -(1./dz)*(ddzdt + u*dzx + v*dzy)
-        #divnew = -(1./dzmean)*(ddzdt + urot*dzx + vrot*dzx) # QG
         divnew = divnew - divnew.mean()
         divdiff = (divnew-div).copy()
         div = div + relax*divdiff
@@ -170,10 +160,10 @@ if __name__ == "__main__":
     
     dzbal = nlbalance(ft,vrt,theta1=model.theta1,theta2=model.theta2,dz1mean=dz[0].mean(),dz2mean=dz[1].mean())
     divbal = np.zeros(div.shape, div.dtype) # initialize guess as zero
-    divbal = baldiv(ft,vrt,divbal,dzbal,dzref=model.dzref,f=model.f,theta1=model.theta1,theta2=model.theta2,\
-             grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.02,eps=1.e-9)
+    divbal = baldiv(ft,vrt,div,dzbal,dzref=model.dzref,f=model.f,theta1=model.theta1,theta2=model.theta2,\
+             grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.02,eps=1.e-8)
 
-    nlevplot = 1
+    nlevplot = -1
     dzplot = dz[nlevplot]
     dzbalplot = dzbal[nlevplot]
     divplot = div[nlevplot]
@@ -190,8 +180,8 @@ if __name__ == "__main__":
         levname='lower'
     elif nlevplot < 0:
         levname='total'
-        dzplot = ztop - dz.sum(axis=0)
-        dzbalplot = ztop - dzbal.sum(axis=0)
+        dzplot = model.ztop - dz.sum(axis=0)
+        dzbalplot = model.ztop - dzbal.sum(axis=0)
         dzmin = -200
         dzmax = 200.
         dzunbalmax = 2
