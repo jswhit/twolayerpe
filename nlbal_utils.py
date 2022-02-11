@@ -81,7 +81,7 @@ def nlbalance_tend(ft,vrt,dvrtdt,f=1.e-4,theta1=300,theta2=330,grav=9.8066):
     dzspec = (theta1/grav)*dzspec # convert from exner function to height units (m)
     return ft.spectogrd(dzspec)
 
-def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,nitermax=10,relax=1.0,eps=1.e-9):
+def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,nitermax=10,relax=1.0,eps=1.e-9,verbose=False):
     # computes balanced divergence with iterative algorithm
     # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
     # div on input is initial guess divergence (gridded) - can be set to zero.
@@ -126,7 +126,7 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         divnew = divnew - divnew.mean() # remove area mean
         divdiff = (divnew-div).copy()
         div = div + relax*divdiff
-        print(niter, np.sqrt((divdiff**2).mean()), np.sqrt((div**2).mean()) )
+        if verbose: print(niter, np.sqrt((divdiff**2).mean()), np.sqrt((div**2).mean()) )
         if np.sqrt((divdiff**2).mean()) < eps: break
     return div
         
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     # compute balanced divergence, given vorticity and balanced thickness.
     divbal = np.zeros(div.shape, div.dtype) # initialize guess as zero
     divbal = baldiv(ft,vrt,divbal,dzbal,dzref=None,f=model.f,theta1=model.theta1,theta2=model.theta2,\
-             grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.02,eps=1.e-8)
+             grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,nitermax=1000,relax=0.02,eps=1.e-9,verbose=True)
 
     nlevplot = 1
     dzplot = dz[nlevplot]
