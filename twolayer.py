@@ -69,7 +69,6 @@ class TwoLayer(object):
         tmpspec1, tmpspec2 = self.ft.getvrtdivspec(tmpg1,tmpg2)
         tmpspec2 = self.ft.grdtospec(0.5*(ug**2+vg**2))
         mspec = self.ft.invlap*tmpspec1 - tmpspec2
-        mstream = self.ft.spectogrd(mspec)
         dzspec[0,...] = mspec[0,...]/self.theta1
         #(mspec[0,...]-self.ft.grdtospec(self.grav*self.orog))/self.theta1 # with orography
         dzspec[1,...] = (mspec[1,:]-mspec[0,...])/self.delth

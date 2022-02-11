@@ -26,6 +26,27 @@ def nlbalance(ft,vrt,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2m
     dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
     return dz
 
+def nlbalance2(ft,vrt,f=1.e-4,theta1=300,theta2=330,grav=9.8066,dz1mean=5.e3,dz2mean=5.e3):
+    # solve nonlinear balance eqn to get layer thickness given vorticity.
+    vrtspec = ft.grdtospec(vrt)
+    divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+    dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+    u,v = ft.getuv(vrtspec,divspec)
+    tmp1 = u*(vrt+f); tmp2 = v*(vrt+f)
+    tmpspec1, tmpspec2 = ft.getvrtdivspec(tmp1,tmp2)
+    tmpspec2 = ft.grdtospec(0.5*(u**2+v**2))
+    mspec = ft.invlap*tmpspec1 - tmpspec2
+    dzspec[0,...] = mspec[0,...]/theta1
+    dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(theta2-theta1)
+    dzspec[0,...] -=  dzspec[1,...]
+    dzspec = (theta1/grav)*dzspec # convert from exner function to height units (m)
+    # set area mean in grid space to state of rest value
+    dz = ft.spectogrd(dzspec)
+    dz = ft.spectogrd(dzspec)
+    dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
+    dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
+    return dz
+
 def nlbalance_tend(ft,vrt,dvrtdt,f=1.e-4,theta1=300,theta2=330,grav=9.8066):
     # ft: Fourier transform object
     # f: coriolis param
@@ -80,18 +101,18 @@ def baldiv(ft,vrt,div,dz,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,td
         else:
             massflux = np.zeros((ft.Nt,ft.Nt),ft.dtype)
         # horizontal vorticity flux
-        tmpg1 = u*(vrt+f); tmpg2 = v*(vrt+f)
+        tmp1 = u*(vrt+f); tmp2 = v*(vrt+f)
         # add lower layer drag contribution
-        tmpg1[0] += v[0]/tdrag
-        tmpg2[0] += -u[0]/tdrag
+        tmp1[0] += v[0]/tdrag
+        tmp2[0] += -u[0]/tdrag
         # add diabatic momentum flux contribution
         # (this version averages vertical flux at top
         # and bottom of each layer)
         # same as 'improved' mc2RSW model (DOI: 10.1002/qj.3292)
-        tmpg1 += 0.5*(v[1]-v[0])*massflux/dz
-        tmpg2 -= 0.5*(u[1]-u[0])*massflux/dz
+        tmp1 += 0.5*(v[1]-v[0])*massflux/dz
+        tmp2 -= 0.5*(u[1]-u[0])*massflux/dz
         # compute vort flux contributions to vorticity and divergence tend.
-        ddivdtspec, dvrtdtspec = ft.getvrtdivspec(tmpg1,tmpg2)
+        ddivdtspec, dvrtdtspec = ft.getvrtdivspec(tmp1,tmp2)
         dvrtdtspec *= -1
         dvrtdt = ft.spectogrd(dvrtdtspec)
         # infer layer thickness tendency from d/dt of balance eqn.
@@ -134,8 +155,8 @@ if __name__ == "__main__":
     nc.close()
 
     # compute layer thickness tendency
-    #tmpg1 = u*dz; tmpg2 = v*dz
-    #tmpspec, ddzdtspec = ft.getvrtdivspec(tmpg1,tmpg2)
+    #tmp1 = u*dz; tmp2 = v*dz
+    #tmpspec, ddzdtspec = ft.getvrtdivspec(tmp1,tmp2)
     #ddzdtspec *= -1
     #ddzdt = ft.spectogrd(ddzdtspec)
     ##ddzdt[0] += (model.dzref[1] - dz[1])/model.tdiab
