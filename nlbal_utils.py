@@ -2,9 +2,13 @@
 # vorticity and continuity equations)
 import numpy as np
 
-def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,dz1mean=5.e3,dz2mean=5.e3,nitermax=10,relax=1.0,eps=1.e-9,verbose=False):
+def getbal(ft,model,vrt,dz1mean=None,dz2mean=None,nitermax=10,relax=1.0,eps=1.e-9,verbose=False):
     """computes balanced layer thickness and divergence given vorticity."""
  
+    if dz1mean is None: 
+        dz1mean = model.zmid
+    if dz2mean is None:
+        dz2mean = model.ztop - model.zmid
     # first, solve non-linear balance equation to get layer thickness given vorticity
     vrtspec = ft.grdtospec(vrt)
     psispec = ft.invlap*vrtspec
@@ -12,13 +16,13 @@ def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*
     #psiyy = ft.spectogrd(-ft.l**2*psispec)
     psiyy = vrt - psixx
     psixy = ft.spectogrd(-ft.k*ft.l*psispec)
-    tmpspec = f*vrtspec + 2.*ft.grdtospec(psixx*psiyy - psixy**2)
+    tmpspec = model.f*vrtspec + 2.*ft.grdtospec(psixx*psiyy - psixy**2)
     mspec = ft.invlap*tmpspec
     dzspec = np.zeros(mspec.shape, mspec.dtype)
-    dzspec[0,...] = mspec[0,...]/theta1
-    dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(theta2-theta1)
+    dzspec[0,...] = mspec[0,...]/model.theta1
+    dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(model.theta2-model.theta1)
     dzspec[0,...] -= dzspec[1,...]
-    dzspec = (theta1/grav)*dzspec # convert from exner function to height units (m)
+    dzspec = (model.theta1/model.grav)*dzspec # convert from exner function to height units (m)
     # set area mean in grid space to state of rest value
     dz = ft.spectogrd(dzspec)
     dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
@@ -26,7 +30,7 @@ def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*
     dzx,dzy = ft.getgrad(dz)
     urot = ft.spectogrd(-ft.il*psispec); vrot = ft.spectogrd(ft.ik*psispec)
 
-    def nlbalance_tend(ft,dvrtdt,f=1.e-4,theta1=300,theta2=330,grav=9.8066):
+    def nlbalance_tend(ft,model,dvrtdt):
         # ft: Fourier transform object
         # f: coriolis param
         # grav: gravity
@@ -40,13 +44,13 @@ def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*
         dpsixxdt = ft.spectogrd(-ft.k**2*dpsispecdt)
         dpsiyydt = dvrtdt - dpsixxdt
         dpsixydt = ft.spectogrd(-ft.k*ft.l*dpsispecdt)
-        tmpspec = f*dvrtspecdt + 2.*ft.grdtospec(dpsixxdt*psiyy + psixx*dpsiyydt - 2*psixy*dpsixydt)
+        tmpspec = model.f*dvrtspecdt + 2.*ft.grdtospec(dpsixxdt*psiyy + psixx*dpsiyydt - 2*psixy*dpsixydt)
         mspec = ft.invlap*tmpspec
         dzspec = np.zeros(mspec.shape, mspec.dtype)
-        dzspec[0,...] = mspec[0,...]/theta1
-        dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(theta2-theta1)
+        dzspec[0,...] = mspec[0,...]/model.theta1
+        dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(model.theta2-model.theta1)
         dzspec[0,...] -= dzspec[1,...]
-        dzspec = (theta1/grav)*dzspec # convert from exner function to height units (m)
+        dzspec = (model.theta1/model.grav)*dzspec # convert from exner function to height units (m)
         return ft.spectogrd(dzspec)
 
     # get balanced divergence computed iterative algorithm
@@ -62,15 +66,13 @@ def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*
         # compute initial guess of vorticity tendency 
         # first, transform fields from spectral space to grid space.
         # diabatic mass flux due to interface relaxation.
-        if dzref is not None:
-            massflux = (dzref[1] - dz[1])/tdiab
-        else:
-            massflux = np.zeros((ft.Nt,ft.Nt),ft.dtype)
+        massflux = (model.dzref[1] - dz[1])/model.tdiab
+        #massflux = np.zeros((ft.Nt,ft.Nt),ft.dtype)
         # horizontal vorticity flux
-        tmp1 = u*(vrt+f); tmp2 = v*(vrt+f)
+        tmp1 = u*(vrt+model.f); tmp2 = v*(vrt+model.f)
         # add lower layer drag contribution
-        tmp1[0] += v[0]/tdrag
-        tmp2[0] += -u[0]/tdrag
+        tmp1[0] += v[0]/model.tdrag
+        tmp2[0] += -u[0]/model.tdrag
         # add diabatic momentum flux contribution
         # (this version averages vertical flux at top
         # and bottom of each layer)
@@ -80,11 +82,13 @@ def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*
         # compute vort flux contributions to vorticity and divergence tend.
         ddivdtspec, dvrtdtspec = ft.getvrtdivspec(tmp1,tmp2)
         dvrtdtspec *= -1
+        dvrtdtspec += model.hyperdiff*vrtspec
         dvrtdt = ft.spectogrd(dvrtdtspec)
         # infer layer thickness tendency from d/dt of balance eqn.
-        ddzdt = nlbalance_tend(ft,dvrtdt,f=f,theta1=theta1,theta2=theta2,grav=grav)
+        ddzdt = nlbalance_tend(ft,model,dvrtdt)
         # new estimate of divergence from continuity eqn
-        divnew = -(1./dz)*(ddzdt + u*dzx + v*dzy)
+        tmp1[0] = massflux; tmp1[1] = -massflux
+        divnew = -(1./dz)*(ddzdt + u*dzx + v*dzy - tmp1)
         divnew = divnew - divnew.mean() # remove area mean
         divdiff = divnew-div
         div = div + relax*divdiff
@@ -122,10 +126,8 @@ if __name__ == "__main__":
     nc.close()
 
     # compute balanced layer thickness and divergence given vorticity.
-    dzbal,divbal = getbal(ft,vrt,dzref=None,f=model.f,theta1=model.theta1,theta2=model.theta2,\
-             grav=model.grav,tdrag=model.tdrag,tdiab=model.tdiab,\
-             dz1mean=model.zmid,dz2mean=model.ztop-model.zmid,\
-             nitermax=1000,relax=0.02,eps=1.e-2,verbose=True)
+    dzbal,divbal = getbal(ft,model,vrt,\
+                   nitermax=1000,relax=0.02,eps=1.e-2,verbose=True)
 
     nlevplot = 1
     dzplot = dz[nlevplot]
