@@ -64,7 +64,6 @@ precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
 nassim = 200 # assimilation times to run
-ntime_startsave = nassim # time to start saving output if savedata not None
 
 nanals = 20 # ensemble members
 
@@ -359,7 +358,7 @@ for ntime in range(nassim):
     # hxens is ensemble in observation space.
     hxens = gethofx(uens,vens,ztop-dzens[:,1,...],indxob,nanals,nobs)
 
-    if savedata is not None and ntime >= ntime_startsave-1:
+    if savedata:
         u_t[ntime] = u_truth[ntime+ntstart]
         u_b[ntime,:,:,:] = uens
         v_t[ntime] = v_truth[ntime+ntstart]
