@@ -2,7 +2,7 @@
 # vorticity and continuity equations)
 import numpy as np
 
-def getbal(ft,model,vrt,dz1mean=None,dz2mean=None,nitermax=10,relax=1.0,eps=1.e-9,verbose=False):
+def getbal(ft,model,vrt,div=None,adiab=True,dz1mean=None,dz2mean=None,nitermax=10,relax=1.0,eps=1.e-9,verbose=False):
     """computes balanced layer thickness and divergence given vorticity."""
  
     if dz1mean is None: 
@@ -56,7 +56,11 @@ def getbal(ft,model,vrt,dz1mean=None,dz2mean=None,nitermax=10,relax=1.0,eps=1.e-
     # get balanced divergence computed iterative algorithm
     # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
     # start iteration with div=0
-    div = np.zeros(vrt.shape, vrt.dtype); converged=False
+    if div is None: # use specified initial estimate
+         div = np.zeros(vrt.shape, vrt.dtype)
+    converged=False
+    if adiab:  # use diabatic mass flux 
+        massflux = np.zeros((ft.Nt,ft.Nt),ft.dtype)
     for niter in range(nitermax):
         divspec = ft.grdtospec(div)
         chispec = ft.invlap*divspec
@@ -66,8 +70,7 @@ def getbal(ft,model,vrt,dz1mean=None,dz2mean=None,nitermax=10,relax=1.0,eps=1.e-
         # compute initial guess of vorticity tendency 
         # first, transform fields from spectral space to grid space.
         # diabatic mass flux due to interface relaxation.
-        massflux = (model.dzref[1] - dz[1])/model.tdiab
-        #massflux = np.zeros((ft.Nt,ft.Nt),ft.dtype)
+        #massflux = (model.dzref[1] - dz[1])/model.tdiab
         # horizontal vorticity flux
         tmp1 = u*(vrt+model.f); tmp2 = v*(vrt+model.f)
         # add lower layer drag contribution
