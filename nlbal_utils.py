@@ -56,7 +56,7 @@ def getbal(ft,model,vrt,dz1mean=None,dz2mean=None,nitermax=10,relax=1.0,eps=1.e-
     # get balanced divergence computed iterative algorithm
     # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
     # start iteration with div=0
-    div = np.zeros(vrt.shape, vrt.dtype)
+    div = np.zeros(vrt.shape, vrt.dtype); converged=False
     for niter in range(nitermax):
         divspec = ft.grdtospec(div)
         chispec = ft.invlap*divspec
@@ -95,7 +95,11 @@ def getbal(ft,model,vrt,dz1mean=None,dz2mean=None,nitermax=10,relax=1.0,eps=1.e-
         divdiffmean = np.sqrt((divdiff**2).mean())
         divmean = np.sqrt((div**2).mean())
         if verbose: print(niter, divdiffmean, divdiffmean/divmean )
-        if divdiffmean/divmean < eps: break
+        if divdiffmean/divmean < eps:    
+            converged = True
+            break
+    if not converged:
+        raise RuntimeError('balanced divergence solution did not converge')
 
     return dz,div
 
