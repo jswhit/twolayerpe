@@ -70,7 +70,7 @@ def getbal(ft,model,vrt,div=None,adiab=True,dz1mean=None,dz2mean=None,nitermax=1
         # compute initial guess of vorticity tendency 
         # first, transform fields from spectral space to grid space.
         # diabatic mass flux due to interface relaxation.
-        #massflux = (model.dzref[1] - dz[1])/model.tdiab
+        if not adiab: massflux = (model.dzref[1] - dz[1])/model.tdiab
         # horizontal vorticity flux
         tmp1 = u*(vrt+model.f); tmp2 = v*(vrt+model.f)
         # add lower layer drag contribution
@@ -133,8 +133,8 @@ if __name__ == "__main__":
     nc.close()
 
     # compute balanced layer thickness and divergence given vorticity.
-    dzbal,divbal = getbal(ft,model,vrt,\
-                   nitermax=1000,relax=0.02,eps=1.e-2,verbose=True)
+    dzbal,divbal = getbal(ft,model,vrt,div=div,adiab=True,\
+                   nitermax=1000,relax=0.02,eps=1.e-1,verbose=True)
 
     nlevplot = 1
     dzplot = dz[nlevplot]
