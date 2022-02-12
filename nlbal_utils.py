@@ -1,5 +1,6 @@
 # computing balanced flow (using nonlinear balance equation and unapproximated
 # vorticity and continuity equations)
+import numpy as np
 
 def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,dz1mean=5.e3,dz2mean=5.e3,nitermax=10,relax=1.0,eps=1.e-9,verbose=False):
     """computes balanced layer thickness and divergence given vorticity."""
@@ -25,27 +26,19 @@ def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*
     dzx,dzy = ft.getgrad(dz)
     urot = ft.spectogrd(-ft.il*psispec); vrot = ft.spectogrd(ft.ik*psispec)
 
-    def nlbalance_tend(ft,vrt,dvrtdt,f=1.e-4,theta1=300,theta2=330,grav=9.8066):
+    def nlbalance_tend(ft,dvrtdt,f=1.e-4,theta1=300,theta2=330,grav=9.8066):
         # ft: Fourier transform object
         # f: coriolis param
         # grav: gravity
         # theta1,theta2: pot temp in each layer
-        # vrt: vorticity in each layer
         # dvrtdt: vorticity tendency in each layer
         # returns dz, layer thickness of each layer
         # solve tendency of nonlinear balance eqn to get layer thickness tendency
-        # given vorticity and vorticity tendency.
+        # given vorticity tendency (psixx,psiyy and psixy already computed)
         dvrtspecdt = ft.grdtospec(dvrtdt)
         dpsispecdt = ft.invlap*dvrtspecdt
-        vrtspec = ft.grdtospec(vrt)
-        psispec = ft.invlap*vrtspec
-        psixx = ft.spectogrd(-ft.k**2*psispec)
-        #psiyy = ft.spectogrd(-ft.l**2*psispec)
-        psiyy = vrt - psixx
         dpsixxdt = ft.spectogrd(-ft.k**2*dpsispecdt)
-        #dpsiyydt = ft.spectogrd(-ft.l**2*dpsispecdt)
         dpsiyydt = dvrtdt - dpsixxdt
-        psixy = ft.spectogrd(-ft.k*ft.l*psispec)
         dpsixydt = ft.spectogrd(-ft.k*ft.l*dpsispecdt)
         tmpspec = f*dvrtspecdt + 2.*ft.grdtospec(dpsixxdt*psiyy + psixx*dpsiyydt - 2*psixy*dpsixydt)
         mspec = ft.invlap*tmpspec
@@ -89,7 +82,7 @@ def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*
         dvrtdtspec *= -1
         dvrtdt = ft.spectogrd(dvrtdtspec)
         # infer layer thickness tendency from d/dt of balance eqn.
-        ddzdt = nlbalance_tend(ft,vrt,dvrtdt,f=f,theta1=theta1,theta2=theta2,grav=grav)
+        ddzdt = nlbalance_tend(ft,dvrtdt,f=f,theta1=theta1,theta2=theta2,grav=grav)
         # new estimate of divergence from continuity eqn
         divnew = -(1./dz)*(ddzdt + u*dzx + v*dzy)
         divnew = divnew - divnew.mean() # remove area mean
@@ -101,7 +94,7 @@ def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*
         if divdiffmean/divmean < eps: break
 
     return dz,div
-        
+
 if __name__ == "__main__":
     import matplotlib
     matplotlib.use('qt5agg')
