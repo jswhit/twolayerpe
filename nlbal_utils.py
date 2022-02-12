@@ -1,5 +1,6 @@
 # computing balanced flow (using nonlinear balance equation and unapproximated
 # vorticity and continuity equations)
+import numpy as np
 
 def getbal(ft,vrt,dzref=None,f=1.e-4,theta1=300,theta2=330,grav=9.8066,tdrag=5.*86400.,tdiab=20.*86400,dz1mean=5.e3,dz2mean=5.e3,nitermax=10,relax=1.0,eps=1.e-9,verbose=False):
     """computes balanced layer thickness and divergence given vorticity."""
