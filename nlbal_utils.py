@@ -51,7 +51,11 @@ def getbal(ft,model,vrt,div=None,adiab=True,dz1mean=None,dz2mean=None,nitermax=1
         dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(model.theta2-model.theta1)
         dzspec[0,...] -= dzspec[1,...]
         dzspec = (model.theta1/model.grav)*dzspec # convert from exner function to height units (m)
-        return ft.spectogrd(dzspec)
+        ddzdt = ft.spectogrd(dzspec)
+        # remove area mean
+        ddzdt[0,...] = ddzdt[0,...] - ddzdt[0,...].mean()
+        ddzdt[1,...] = ddzdt[1,...] - ddzdt[1,...].mean()
+        return ddzdt
 
     # get balanced divergence computed iterative algorithm
     # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
@@ -121,10 +125,11 @@ if __name__ == "__main__":
 
     ft = Fouriert(nc.N,nc.L,precision=str(nc['dz'].dtype))
 
-    ntime = -1
+    ntime = int(sys.argv[2])
     u = nc['u'][ntime]
     v = nc['v'][ntime]
     dz = nc['dz'][ntime]
+    print('area mean layer thickness = ',dz[0].mean(), dz[1].mean())
     vrtspec, divspec = ft.getvrtdivspec(u,v)
     vrt = ft.spectogrd(vrtspec); div = ft.spectogrd(divspec)
 
@@ -133,8 +138,8 @@ if __name__ == "__main__":
     nc.close()
 
     # compute balanced layer thickness and divergence given vorticity.
-    dzbal,divbal = getbal(ft,model,vrt,div=div,adiab=True,\
-                   nitermax=1000,relax=0.02,eps=1.e-1,verbose=True)
+    dzbal,divbal = getbal(ft,model,vrt,div=None,adiab=True,dz1mean=dz[0].mean(),dz2mean=dz[1].mean(),\
+                   nitermax=1000,relax=0.02,eps=1.e-4,verbose=True)
 
     nlevplot = 1
     dzplot = dz[nlevplot]
