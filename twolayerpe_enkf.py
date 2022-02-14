@@ -61,9 +61,9 @@ read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
 precision = 'float32'
-savedata = None # if not None, netcdf filename to save data.
-#savedata = True # filename given by exptname env var
-nassim = 200 # assimilation times to run
+#savedata = None # if not None, netcdf filename to save data.
+savedata = True # filename given by exptname env var
+nassim = 50 # assimilation times to run
 
 nanals = 20 # ensemble members
 
@@ -222,7 +222,7 @@ if savedata is not None:
     ydim = nc.createDimension('y',Nt)
     z = nc.createDimension('z',2)
     t = nc.createDimension('t',None)
-    obs = nc.createDimension('obs',nobs)
+    obsd = nc.createDimension('obs',nobs)
     ens = nc.createDimension('ens',nanals)
     u_t =\
     nc.createVariable('u_t',dtype,('t','z','y','x'),zlib=True)
@@ -243,7 +243,13 @@ if savedata is not None:
     dz_a =\
     nc.createVariable('dz_a',dtype,('t','ens','z','y','x'),zlib=True)
 
-    obs = nc.createVariable('obs',dtype,('t','obs'))
+    obsu1 = nc.createVariable('obsu1',dtype,('t','obs'))
+    obsv1 = nc.createVariable('obsv1',dtype,('t','obs'))
+    obsu2 = nc.createVariable('obsu2',dtype,('t','obs'))
+    obsv2 = nc.createVariable('obsv2',dtype,('t','obs'))
+    obszmid = nc.createVariable('obszmid',dtype,('t','obs'))
+    x_obs = nc.createVariable('x_ob',dtype,('t','obs'))
+    y_obs = nc.createVariable('y_ob',dtype,('t','obs'))
     xvar = nc.createVariable('x',dtype,('x',))
     xvar.units = 'meters'
     yvar = nc.createVariable('y',dtype,('y',))
@@ -254,8 +260,8 @@ if savedata is not None:
     tvar.units = 'seconds'
     ensvar = nc.createVariable('ens',np.int32,('ens',))
     ensvar.units = 'dimensionless'
-    xvar[:] = model.x[:]
-    yvar[:] = model.y[:]
+    xvar[:] = model.x[0,:]
+    yvar[:] = model.y[:,0]
     zvar[0] = model.theta1; zvar[1] = model.theta2
     ensvar[:] = np.arange(1,nanals+1)
 
@@ -365,7 +371,11 @@ for ntime in range(nassim):
         v_b[ntime,:,:,:] = vens
         dz_t[ntime] = dz_truth[ntime+ntstart]
         dz_b[ntime,:,:,:] = dzens
-        obs[ntime] = obs
+        obsu1[ntime] = obs[0:nobs]
+        obsv1[ntime] = obs[nobs:2*nobs]
+        obsu2[ntime] = obs[2*nobs:3*nobs]
+        obsu2[ntime] = obs[3*nobs:4*nobs]
+        obszmid[ntime] = obs[4*nobs:]
         x_obs[ntime] = xob
         y_obs[ntime] = yob
 
