@@ -63,7 +63,7 @@ posterior_stats = False
 precision = 'float32'
 #savedata = None # if not None, netcdf filename to save data.
 savedata = True # filename given by exptname env var
-nassim = 50 # assimilation times to run
+nassim = 20 # assimilation times to run
 
 nanals = 20 # ensemble members
 
@@ -200,6 +200,8 @@ model.timesteps = assim_timesteps
 # initialize output file.
 if savedata is not None:
     nc = Dataset('%s.nc' % exptname, mode='w', format='NETCDF4_CLASSIC')
+    nc.dt = dt
+    nc.precision = precision
     nc.theta1 = theta1
     nc.theta2 = theta2
     nc.delth = theta2-theta1
