@@ -141,28 +141,49 @@ if __name__ == "__main__":
     u_a = nc['u_a'][ntime]
     v_a = nc['v_a'][ntime]
     dz_a = nc['dz_a'][ntime]
+
     uensmean_b = u_b.mean(axis=0)
     vensmean_b = v_b.mean(axis=0)
     dzensmean_b = dz_b.mean(axis=0)
+    vrtspec, divspec = ft.getvrtdivspec(uensmean_b,vensmean_b)
+    vrtensmean_b = ft.spectogrd(vrtspec); divensmean_b = ft.spectogrd(divspec)
     uensmean_a = u_a.mean(axis=0)
     vensmean_a = v_a.mean(axis=0)
     dzensmean_a = dz_a.mean(axis=0)
-    uinc = uensmean_a - uensmean_b
-    vinc = vensmean_a - vensmean_b
-    dzinc = dzensmean_a - dzensmean_b
-
-    vrtspec, divspec = ft.getvrtdivspec(uinc,vinc)
-    vrtinc = ft.spectogrd(vrtspec); divinc = ft.spectogrd(divspec)
-    vrtspec, divspec = ft.getvrtdivspec(uensmean_b,vensmean_b)
-    vrtensmean_b = ft.spectogrd(vrtspec); divensmean_b = ft.spectogrd(divspec)
+    vrtspec, divspec = ft.getvrtdivspec(uensmean_a,vensmean_a)
+    vrtensmean_a = ft.spectogrd(vrtspec); divensmean_a = ft.spectogrd(divspec)
 
     model = TwoLayer(ft,600.,zmid=nc.zmid,ztop=nc.ztop,tdrag=nc.tdrag,tdiab=nc.tdiab,\
     umax=nc.umax,jetexp=nc.jetexp,theta1=nc.theta1,theta2=nc.theta2,diff_efold=nc.diff_efold)
-    nc.close()
 
-    # compute balanced layer thickness and divergence given vorticity.
+    vrtinc = vrtensmean_a-vrtensmean_b
+    divinc = divensmean_a-divensmean_b
+    dzinc = dzensmean_a-dzensmean_b
     dzincbal,divincbal = getincbal(ft,model,dzensmean_b,vrtensmean_b,divensmean_b,vrtinc,div=None,\
-                         nitermax=1000,relax=0.02,eps=1.e-4,verbose=True)
+                         nitermax=1000,relax=0.02,eps=1.e-4,verbose=False)
+    dznew = dzensmean_b+dzincbal
+    print('updated dz min/max',dznew.min(), dznew.max())
+
+    nanals = u_a.shape[0]
+    for nmem in range(nanals):
+        uinc = u_a[nmem] - u_b[nmem]
+        vinc = v_a[nmem] - v_b[nmem]
+        dzinc = dz_a[nmem] - dz_b[nmem]
+        vrtspec, divspec = ft.getvrtdivspec(uinc,vinc)
+        vrtinc = ft.spectogrd(vrtspec); divinc = ft.spectogrd(divspec)
+        vrtspec, divspec = ft.getvrtdivspec(u_b[nmem],v_b[nmem])
+        vrt_b = ft.spectogrd(vrtspec); div_b = ft.spectogrd(divspec)
+        # compute balanced layer thickness and divergence given vorticity.
+        dzincbal,divincbal = getincbal(ft,model,dz_b[nmem],vrt_b,div_b,vrtinc,div=None,\
+                             nitermax=1000,relax=0.02,eps=1.e-4,verbose=False)
+        print(nmem)
+        print(dzinc.min(), dzinc.max())
+        print(dzincbal.min(), dzincbal.max())
+        print(divinc.min(), divinc.max())
+        print(divincbal.min(), divincbal.max())
+        dznew = dz_b[nmem]+dzincbal
+        print('updated dz min/max',dznew.min(), dznew.max())
+    nc.close()
 
     nlevplot = 1
     dzincplot = dzinc[nlevplot]
