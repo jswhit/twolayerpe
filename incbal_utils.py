@@ -36,6 +36,7 @@ def getincbal(ft,model,dzb,vrtb,divb,vrt,div=None,nitermax=100,relax=0.02,eps=1.
     dvrtspecdtb, ddivspecdtb, ddzspecdtb = model.gettend(vrtspecb,divspecb,dzspecb)
     dvrtdtb = ft.spectogrd(dvrtspecdtb)
     massflux = (model.dzref[1] - dz[1])/model.tdiab
+    massfluxb = (model.dzref[1] - dzb[1])/model.tdiab
 
     def nlbalance_tend(ft,model,dvrtdt):
         # ft: Fourier transform object
@@ -90,6 +91,8 @@ def getincbal(ft,model,dzb,vrtb,divb,vrt,div=None,nitermax=100,relax=0.02,eps=1.
         # add lower layer drag contribution
         tmp1[0] += v[0]/model.tdrag
         tmp2[0] += -u[0]/model.tdrag
+        tmp1 += 0.5*(v[1]-v[0])*massfluxb/dzb
+        tmp2 -= 0.5*(u[1]-u[0])*massfluxb/dzb
         ddivdtspec, dvrtdtspec = ft.getvrtdivspec(tmp1,tmp2)
         dvrtdtspec *= -1
         dvrtdtspec += model.hyperdiff*vrtspec
@@ -100,7 +103,6 @@ def getincbal(ft,model,dzb,vrtb,divb,vrt,div=None,nitermax=100,relax=0.02,eps=1.
         tmp1[0] = massflux; tmp1[1] = -massflux
         divnew = -(1./dzb)*(ddzdt + ub*dzx + u*dzbx  + vb*dzy + v*dzby + divb*dz - tmp1)
         #divnew = -(1./dzb)*(ddzdt + ub*dzx + u*dzbx  + vb*dzy + v*dzby + divb*dz)
-        #divnew = divnew - divnew.mean() # remove area mean
         divdiff = divnew-div
         div = div + relax*divdiff
         divdiffmean = np.sqrt((divdiff**2).mean())
@@ -121,7 +123,7 @@ def getincbal(ft,model,dzb,vrtb,divb,vrt,div=None,nitermax=100,relax=0.02,eps=1.
 
 if __name__ == "__main__":
     import matplotlib
-    matplotlib.use('qt5agg')
+    matplotlib.use('agg')
     import matplotlib.pyplot as plt
     import sys
     import numpy as np
@@ -164,26 +166,26 @@ if __name__ == "__main__":
     dznew = dzensmean_b+dzincbal
     print('updated dz min/max',dznew.min(), dznew.max())
 
-    nanals = u_a.shape[0]
-    for nmem in range(nanals):
-        uinc = u_a[nmem] - u_b[nmem]
-        vinc = v_a[nmem] - v_b[nmem]
-        dzinc = dz_a[nmem] - dz_b[nmem]
-        vrtspec, divspec = ft.getvrtdivspec(uinc,vinc)
-        vrtinc = ft.spectogrd(vrtspec); divinc = ft.spectogrd(divspec)
-        vrtspec, divspec = ft.getvrtdivspec(u_b[nmem],v_b[nmem])
-        vrt_b = ft.spectogrd(vrtspec); div_b = ft.spectogrd(divspec)
-        # compute balanced layer thickness and divergence given vorticity.
-        dzincbal,divincbal = getincbal(ft,model,dz_b[nmem],vrt_b,div_b,vrtinc,div=None,\
-                             nitermax=1000,relax=0.02,eps=1.e-4,verbose=False)
-        print(nmem)
-        print(dzinc.min(), dzinc.max())
-        print(dzincbal.min(), dzincbal.max())
-        print(divinc.min(), divinc.max())
-        print(divincbal.min(), divincbal.max())
-        dznew = dz_b[nmem]+dzincbal
-        print('updated dz min/max',dznew.min(), dznew.max())
-    nc.close()
+    #nanals = u_a.shape[0]
+    #for nmem in range(nanals):
+    #    uinc = u_a[nmem] - u_b[nmem]
+    #    vinc = v_a[nmem] - v_b[nmem]
+    #    dzinc = dz_a[nmem] - dz_b[nmem]
+    #    vrtspec, divspec = ft.getvrtdivspec(uinc,vinc)
+    #    vrtinc = ft.spectogrd(vrtspec); divinc = ft.spectogrd(divspec)
+    #    vrtspec, divspec = ft.getvrtdivspec(u_b[nmem],v_b[nmem])
+    #    vrt_b = ft.spectogrd(vrtspec); div_b = ft.spectogrd(divspec)
+    #    # compute balanced layer thickness and divergence given vorticity.
+    #    dzincbal,divincbal = getincbal(ft,model,dz_b[nmem],vrt_b,div_b,vrtinc,div=None,\
+    #                         nitermax=1000,relax=0.02,eps=1.e-4,verbose=False)
+    #    print(nmem)
+    #    print(dzinc.min(), dzinc.max())
+    #    print(dzincbal.min(), dzincbal.max())
+    #    print(divinc.min(), divinc.max())
+    #    print(divincbal.min(), divincbal.max())
+    #    dznew = dz_b[nmem]+dzincbal
+    #    print('updated dz min/max',dznew.min(), dznew.max())
+    #nc.close()
 
     nlevplot = 1
     dzincplot = dzinc[nlevplot]
