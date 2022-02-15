@@ -108,6 +108,10 @@ def getbal(ft,model,vrt,div=None,adiab=True,dz1mean=None,dz2mean=None,nitermax=1
     if not converged:
         raise RuntimeError('balanced divergence solution did not converge')
 
+    # remove area mean
+    div[0]=div[0]-div[0].mean()
+    div[1]=div[1]-div[1].mean()
+
     return dz,div
 
 if __name__ == "__main__":
