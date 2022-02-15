@@ -317,40 +317,40 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
 
 def enstoctl(model,uens,vens,dzens):
     # use psi,chi (times total wavenumber)
-    for nmem in range(nanals):
-        vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
-        #psispec = np.sqrt(model.ft.ksqlsq)*model.ft.invlap*vrtspec
-        #chispec = np.sqrt(model.ft.ksqlsq)*model.ft.invlap*divspec
-        #psispec = model.ft.invlap*vrtspec
-        #chispec = model.ft.invlap*divspec
-        psispec = vrtspec
-        chispec = divspec
-        psi = model.ft.spectogrd(psispec)
-        chi = model.ft.spectogrd(psispec)
-        xens[nmem,0:2,:] = psi.reshape(2,model.ft.Nt**2)
-        xens[nmem,2:4,:] = chi.reshape(2,model.ft.Nt**2)
+    #for nmem in range(nanals):
+    #    vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
+    #    #psispec = np.sqrt(model.ft.ksqlsq)*model.ft.invlap*vrtspec
+    #    #chispec = np.sqrt(model.ft.ksqlsq)*model.ft.invlap*divspec
+    #    #psispec = model.ft.invlap*vrtspec
+    #    #chispec = model.ft.invlap*divspec
+    #    psispec = vrtspec
+    #    chispec = divspec
+    #    psi = model.ft.spectogrd(psispec)
+    #    chi = model.ft.spectogrd(psispec)
+    #    xens[nmem,0:2,:] = psi.reshape(2,model.ft.Nt**2)
+    #    xens[nmem,2:4,:] = chi.reshape(2,model.ft.Nt**2)
     # update u,v
-    #xens[:,0:2,:] = uens.reshape(nanals,2,model.ft.Nt**2)
-    #xens[:,2:4,:] = vens.reshape(nanals,2,model.ft.Nt**2)
+    xens[:,0:2,:] = uens.reshape(nanals,2,model.ft.Nt**2)
+    xens[:,2:4,:] = vens.reshape(nanals,2,model.ft.Nt**2)
     xens[:,4:6,:] = dzens.reshape(nanals,2,model.ft.Nt**2)
     return xens
 
 def ctltoens(model,xens):
     # use psi,chi (times total wavenumber)
-    for nmem in range(nanals):
-        psi = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
-        chi = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
-        psispec = model.ft.grdtospec(psi); chispec = model.ft.grdtospec(chi)
-        #vrtspec = np.sqrt(model.ft.ksqlsqinv)*model.ft.lap*psispec
-        #divspec = np.sqrt(model.ft.ksqlsqinv)*model.ft.lap*chispec
-        #vrtspec = model.ft.lap*psispec
-        #divspec = model.ft.lap*chispec
-        vrtspec = psispec; divspec = chispec
-        uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
-        print(nmem,uens[nmem].min(),uens[nmem].max())
+    #for nmem in range(nanals):
+    #    psi = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
+    #    chi = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
+    #    psispec = model.ft.grdtospec(psi); chispec = model.ft.grdtospec(chi)
+    #    #vrtspec = np.sqrt(model.ft.ksqlsqinv)*model.ft.lap*psispec
+    #    #divspec = np.sqrt(model.ft.ksqlsqinv)*model.ft.lap*chispec
+    #    #vrtspec = model.ft.lap*psispec
+    #    #divspec = model.ft.lap*chispec
+    #    vrtspec = psispec; divspec = chispec
+    #    uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
+    #    print(nmem,uens[nmem].min(),uens[nmem].max())
     # using u,v
-    #uens = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    #vens = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    uens = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    vens = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     dzens = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     #   # pressure gradient force contribution to divergence tend
     #   mstrm = np.empty((2,model.ft.Nt,model.ft.Nt), dtype=model.ft.dtype) # montgomery streamfunction
