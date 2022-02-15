@@ -36,8 +36,11 @@ def gaspcohn(r):
     )
     return taper
 
-def letkf_kernel(xens,hxens,obs,oberrs,covlocal):
+def letkf_kernel(xens,hxens,obs,oberrs,covlocal,nlevs_update=None):
     nanals, nlevs = xens.shape
+    if nlevs_update is not None:
+        # only update 1st nlevs_update 2d fields.
+        nlevs = nlevs_update
     nobs = len(obs)
     xmean = xens.mean(axis=0)
     xprime = xens - xmean
@@ -58,15 +61,15 @@ def letkf_kernel(xens,hxens,obs,oberrs,covlocal):
         xens[:, k] = xmean[k] + np.dot(wts.T, xprime[:, k])
     return xens
 
-def letkf_update(xens,hxens,obs,oberrs,covlocal,n_jobs):
+def letkf_update(xens,hxens,obs,oberrs,covlocal,n_jobs,nlevs_update=None):
     """letkf method"""
     ndim = xens.shape[-1]
     if not n_jobs:
         for n in range(ndim):
-            xens[:,:,n] = letkf_kernel(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n])
+            xens[:,:,n] = letkf_kernel(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n],nlevs_update=nlevs_update)
     else:
         # use joblib to distribute over n_jobs tasks
-        results = Parallel(n_jobs=n_jobs)(delayed(letkf_kernel)(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n]) for n in range(ndim))
+        results = Parallel(n_jobs=n_jobs)(delayed(letkf_kernel)(xens[:,:,n],hxens,obs,oberrs,covlocal[:,n],nlevs_update=nlevs_update) for n in range(ndim))
         for n in range(ndim):
              xens[:,:,n] = results[n]
     return xens

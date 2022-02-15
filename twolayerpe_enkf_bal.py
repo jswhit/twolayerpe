@@ -432,7 +432,8 @@ for ntime in range(nassim):
     # update state vector with serial filter or letkf.
     if not debug_model: 
         if use_letkf:
-            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
+            # only update first four fields (dzens_bal will be inferred from balanced u,v)
+            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs,nlevs_update=4) 
         else:
             xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
         t2 = time.time()
@@ -455,10 +456,11 @@ for ntime in range(nassim):
         xprime = xprime*inflation_factor
         xens = xprime + xensmean_a
 
+    uens_bal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
+    vens_bal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
+    dzens_bal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
+
     # impose incremental balance on 'balanced' increment
-    #uens_bal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
-    #vens_bal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
-    #dzens_bal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
     #for nmem in range(nanals):
     #    uinc = uens_bal[nmem] - uens_b[nmem]
     #    vinc = vens_bal[nmem] - vens_b[nmem]
@@ -477,7 +479,7 @@ for ntime in range(nassim):
     #vens_bal=vens_b+vens_inc
     #dzens_bal=dzens_b+dzens_inc
 
-    # balance total fields
+    # or.. balance total fields
     for nmem in range(nanals):
         vrtspec, divspec = ft.getvrtdivspec(uens_bal[nmem],vens_bal[nmem])
         vrt = ft.spectogrd(vrtspec); div = ft.spectogrd(divspec)
