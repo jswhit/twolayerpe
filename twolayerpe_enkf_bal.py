@@ -34,6 +34,9 @@ python twolayerpe_enkf_bal.py hcovlocal_scale hcovlocal_scale_unbal  <covinflate
 
 # horizontal covariance localization length scale in meters.
 hcovlocal_scale = 1.e3*float(sys.argv[1])
+# if hcovlocal_scale_unbal=1, unbalanced part cycled but not updated.
+# if hcovlocal_scale_unbal=0, unbalanced part of analysis set to zero.
+# if hcovlocal_scale_unbal>1, unbalanced part updated assuming bal and unbal parts uncorrelated.
 hcovlocal_scale_unbal = 1.e3*float(sys.argv[2])
 
 # optional inflation parameters:
@@ -382,7 +385,7 @@ for ntime in range(nassim):
     # split background into balanced and unbalanced parts
     # update balanced and unbalanced parts separately
     # (assuming no cross-covariance)
-    # impose incremental balance constraint on balanced part of increment after the update
+    # impose balance constraint on balanced part of increment after the update
     for nmem in range(nanals):
         vrtspec, divspec = ft.getvrtdivspec(uens[nmem],vens[nmem])
         vrt = ft.spectogrd(vrtspec); div = ft.spectogrd(divspec)
@@ -397,8 +400,6 @@ for ntime in range(nassim):
         vens_unbal[nmem]=vens[nmem]-vens_bal[nmem]
         dzens_unbal[nmem]=dzens[nmem]-dzens_bal[nmem]
     uens_b = uens_bal.copy(); vens_b = vens_bal.copy(); dzens_b = dzens_bal.copy()
-    #print(uens_unbal.min(), uens_unbal.max())
-    #print(dzens_unbal.min(), dzens_unbal.max())
 
     # compute forward operator.
     # hxens is ensemble in observation space.
@@ -525,25 +526,31 @@ for ntime in range(nassim):
             if covinflate2 < 0:
                 # relaxation to prior stdev (Whitaker & Hamill 2012)
                 asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
-                inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
+                inflation_factoru = 1.+covinflate1*(fsprd-asprd)/asprd
             else:
                 # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
                 # model, linear gaussian scenario)
                 # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
                 inc = xensmean_a - xensmean_b
-                inflation_factor = covinflate1*asprd + \
+                inflation_factoru = covinflate1*asprd + \
                 (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
-                inflation_factor = np.sqrt(inflation_factor/asprd)
-            xprime = xprime*inflation_factor
+                inflation_factoru = np.sqrt(inflation_factoru/asprd)
+            xprime = xprime*inflation_factoru
             xens = xprime + xensmean_a
 
         uens_unbal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
         vens_unbal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
         dzens_unbal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
-    uens = uens_bal + uens_unbal
-    vens = vens_bal + vens_unbal
-    dzens = dzens_bal + dzens_unbal
+    if hcovlocal_scale_unbal == 0:
+        uens = uens_bal
+        vens = vens_bal
+        dzens = dzens_bal
+        #dzens = dzens_bal + dzens_unbal # really only need this
+    else:
+        uens = uens_bal + uens_unbal
+        vens = vens_bal + vens_unbal
+        dzens = dzens_bal + dzens_unbal
 
     # posterior stats
     if posterior_stats:
