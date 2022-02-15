@@ -17,7 +17,7 @@ if len(sys.argv) == 1:
    msg="""
 python twolayerpe_enkf.py hcovlocal_scale <covinflate1 covinflate2>
    hcovlocal_scale = horizontal localization scale in km
-   vertical covariance length scale implied by scaling with Rossby radius.
+   no vertical localization
    covinflate1,covinflate2: inflation parameters (optional).
    if only covinflate1 is specified, it is interpreted as the relaxation
    factor for RTPS inflation.
@@ -315,6 +315,53 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
+def enstoctl(model,uens,vens,dzens):
+    # use psi,chi (times total wavenumber)
+    for nmem in range(nanals):
+        vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
+        #psispec = np.sqrt(model.ft.ksqlsq)*model.ft.invlap*vrtspec
+        #chispec = np.sqrt(model.ft.ksqlsq)*model.ft.invlap*divspec
+        #psispec = model.ft.invlap*vrtspec
+        #chispec = model.ft.invlap*divspec
+        psispec = vrtspec
+        chispec = divspec
+        psi = model.ft.spectogrd(psispec)
+        chi = model.ft.spectogrd(psispec)
+        xens[nmem,0:2,:] = psi.reshape(2,model.ft.Nt**2)
+        xens[nmem,2:4,:] = chi.reshape(2,model.ft.Nt**2)
+    # update u,v
+    #xens[:,0:2,:] = uens.reshape(nanals,2,model.ft.Nt**2)
+    #xens[:,2:4,:] = vens.reshape(nanals,2,model.ft.Nt**2)
+    xens[:,4:6,:] = dzens.reshape(nanals,2,model.ft.Nt**2)
+    return xens
+
+def ctltoens(model,xens):
+    # use psi,chi (times total wavenumber)
+    for nmem in range(nanals):
+        psi = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
+        chi = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
+        psispec = model.ft.grdtospec(psi); chispec = model.ft.grdtospec(chi)
+        #vrtspec = np.sqrt(model.ft.ksqlsqinv)*model.ft.lap*psispec
+        #divspec = np.sqrt(model.ft.ksqlsqinv)*model.ft.lap*chispec
+        #vrtspec = model.ft.lap*psispec
+        #divspec = model.ft.lap*chispec
+        vrtspec = psispec; divspec = chispec
+        uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
+        print(nmem,uens[nmem].min(),uens[nmem].max())
+    # using u,v
+    #uens = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    #vens = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    dzens = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    #   # pressure gradient force contribution to divergence tend
+    #   mstrm = np.empty((2,model.ft.Nt,model.ft.Nt), dtype=model.ft.dtype) # montgomery streamfunction
+    #   mstrm[0] = model.grav*(dz[0] + dz[1])
+    #   mstrm[1] = mstrm[0] + (model.grav*(model.theta2-model.theta1)/model.theta1)*dz[1]
+    #   dz[0,...] = mstrm[0,...]/model.theta1
+    #   dz[1,...] = (mstrm[1,:]-mstrm[0,...])/(model.theta2-model.theta1)
+    #   dz[0,...] = dz[0,...] - dz[1,...]
+    #   dz = (model.theta1/model.grav)*dz # convert from exner function to height units (m)
+    return uens,vens,dzens
+
 masstend_diag = 0.
 inflation_factor = np.ones((2,Nt,Nt))
 for ntime in range(nassim):
@@ -383,9 +430,7 @@ for ntime in range(nassim):
 
     # EnKF update
     # create state vector.
-    xens[:,0:2,:] = uens.reshape(nanals,2,Nt**2)
-    xens[:,2:4,:] = vens.reshape(nanals,2,Nt**2)
-    xens[:,4:6,:] = dzens.reshape(nanals,2,Nt**2)
+    xens = enstoctl(model,uens,vens,dzens)
     xensmean_b = xens.mean(axis=0)
     xprime = xens-xensmean_b
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
@@ -427,9 +472,7 @@ for ntime in range(nassim):
         xens = xprime + xensmean_a
 
     # back to 3d state vector
-    uens = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
-    vens = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
-    dzens = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
+    uens,vens,dzens = ctltoens(model,xens)
 
     # posterior stats
     if posterior_stats:

@@ -17,9 +17,10 @@ from joblib import Parallel, delayed
 
 if len(sys.argv) == 1:
    msg="""
-python twolayerpe_enkf.py hcovlocal_scale <covinflate1 covinflate2>
-   hcovlocal_scale = horizontal localization scale in km
-   vertical covariance length scale implied by scaling with Rossby radius.
+python twolayerpe_enkf_bal.py hcovlocal_scale hcovlocal_scale_unbal  <covinflate1 covinflate2>
+   hcovlocal_scale = horizontal localization scale in km for balanced part
+   hcovlocal_scale_unbal = horizontal localization scale in km for unbalanced part
+   no vertical localization.
    covinflate1,covinflate2: inflation parameters (optional).
    if only covinflate1 is specified, it is interpreted as the relaxation
    factor for RTPS inflation.
@@ -33,18 +34,19 @@ python twolayerpe_enkf.py hcovlocal_scale <covinflate1 covinflate2>
 
 # horizontal covariance localization length scale in meters.
 hcovlocal_scale = 1.e3*float(sys.argv[1])
+hcovlocal_scale_unbal = 1.e3*float(sys.argv[2])
 
 # optional inflation parameters:
 # (covinflate2 <= 0 for RTPS inflation
 # (http://journals.ametsoc.org/doi/10.1175/MWR-D-11-00276.1),
 # otherwise use Hodyss et al inflation
 # (http://journals.ametsoc.org/doi/abs/10.1175/MWR-D-15-0329.1)
-if len(sys.argv) == 3:
-    covinflate1 = float(sys.argv[2])
+if len(sys.argv) == 4:
+    covinflate1 = float(sys.argv[3])
     covinflate2 = -1
-elif len(sys.argv) == 4:
-    covinflate1 = float(sys.argv[2])
-    covinflate2 = float(sys.argv[3])
+elif len(sys.argv) == 5:
+    covinflate1 = float(sys.argv[3])
+    covinflate2 = float(sys.argv[4])
 else:
     covinflate1 = 1.
     covinflate2 = 1.
@@ -162,8 +164,8 @@ if not read_restart:
 else:
     ncinit.close()
 
-print("# hcovlocal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
-     (hcovlocal_scale/1000.,use_letkf,covinflate1,covinflate2,nanals))
+print("# hcovlocal=%g hcovlocal_unbal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
+     (hcovlocal_scale/1000.,hcovlocal_scale_unbal/1000.,use_letkf,covinflate1,covinflate2,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
@@ -184,7 +186,9 @@ oberrvar[4*nobs:] = oberrstdev_zmid*oberrvar[4*nobs:]
 
 obs = np.empty(5*nobs,dtype)
 covlocal1 = np.empty(Nt**2,dtype)
+covlocal1u = np.empty(Nt**2,dtype)
 covlocal1_tmp = np.empty((nobs,Nt**2),dtype)
+covlocal1u_tmp = np.empty((nobs,Nt**2),dtype)
 covlocal_tmp = np.empty((5*nobs,Nt**2),dtype)
 xens = np.empty((nanals,6,Nt**2),dtype)
 if not use_letkf:
@@ -356,6 +360,8 @@ for ntime in range(nassim):
         dist = cartdist(xob[nob],yob[nob],x,y,nc_climo.L,nc_climo.L)
         covlocal1 = gaspcohn(dist/hcovlocal_scale)
         covlocal1_tmp[nob] = covlocal1.ravel()
+        covlocal1u = gaspcohn(dist/hcovlocal_scale_unbal)
+        covlocal1u_tmp[nob] = covlocal1u.ravel()
         dist = cartdist(xob[nob],yob[nob],xob,yob,nc_climo.L,nc_climo.L)
         if not use_letkf: obcovlocal1[nob] = gaspcohn(dist/hcovlocal_scale)
     covlocal_tmp[nobs:2*nobs,:] = covlocal1_tmp
@@ -490,43 +496,50 @@ for ntime in range(nassim):
         uens_bal[nmem], vens_bal[nmem] = ft.getuv(vrtspec,divspec)
         dzens_bal[nmem] = dzbal
 
-    # EnKF update for unbalanced part.
-    xens[:,0:2,:] = uens_unbal[:].reshape(nanals,2,Nt**2)
-    xens[:,2:4,:] = vens_unbal[:].reshape(nanals,2,Nt**2)
-    xens[:,4:6,:] = dzens_unbal[:].reshape(nanals,2,Nt**2)
-    xensmean_b = xens.mean(axis=0)
-    xprime = xens-xensmean_b
-    fsprd = (xprime**2).sum(axis=0)/(nanals-1)
+    if hcovlocal_scale_unbal > 1001: # otherwise don't update unbalanced part.
+        # EnKF update for unbalanced part.
+        xens[:,0:2,:] = uens_unbal[:].reshape(nanals,2,Nt**2)
+        xens[:,2:4,:] = vens_unbal[:].reshape(nanals,2,Nt**2)
+        xens[:,4:6,:] = dzens_unbal[:].reshape(nanals,2,Nt**2)
+        xensmean_b = xens.mean(axis=0)
+        xprime = xens-xensmean_b
+        fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
-    # update state vector with serial filter or letkf.
-    if not debug_model: 
-        if use_letkf:
-            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
-        else:
-            xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
-        t2 = time.time()
-        if profile: print('cpu time for EnKF update',t2-t1)
-        xensmean_a = xens.mean(axis=0)
-        xprime = xens-xensmean_a
-        asprd = (xprime**2).sum(axis=0)/(nanals-1)
-        if covinflate2 < 0:
-            # relaxation to prior stdev (Whitaker & Hamill 2012)
-            asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
-            inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
-        else:
-            # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
-            # model, linear gaussian scenario)
-            # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
-            inc = xensmean_a - xensmean_b
-            inflation_factor = covinflate1*asprd + \
-            (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
-            inflation_factor = np.sqrt(inflation_factor/asprd)
-        xprime = xprime*inflation_factor
-        xens = xprime + xensmean_a
+        # (different localization for unbalanced part)
+        covlocal_tmp[nobs:2*nobs,:] = covlocal1u_tmp
+        covlocal_tmp[2*nobs:3*nobs,:] = covlocal1u_tmp
+        covlocal_tmp[3*nobs:4*nobs,:] = covlocal1u_tmp
+        covlocal_tmp[4*nobs:,:] = covlocal1u_tmp
 
-    uens_unbal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
-    vens_unbal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
-    dzens_unbal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
+        # update state vector with serial filter or letkf.
+        if not debug_model: 
+            if use_letkf:
+                xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
+            else:
+                xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
+            t2 = time.time()
+            if profile: print('cpu time for EnKF update',t2-t1)
+            xensmean_a = xens.mean(axis=0)
+            xprime = xens-xensmean_a
+            asprd = (xprime**2).sum(axis=0)/(nanals-1)
+            if covinflate2 < 0:
+                # relaxation to prior stdev (Whitaker & Hamill 2012)
+                asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
+                inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
+            else:
+                # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
+                # model, linear gaussian scenario)
+                # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
+                inc = xensmean_a - xensmean_b
+                inflation_factor = covinflate1*asprd + \
+                (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
+                inflation_factor = np.sqrt(inflation_factor/asprd)
+            xprime = xprime*inflation_factor
+            xens = xprime + xensmean_a
+
+        uens_unbal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
+        vens_unbal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
+        dzens_unbal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
     uens = uens_bal + uens_unbal
     vens = vens_bal + vens_unbal
