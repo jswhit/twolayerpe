@@ -61,9 +61,9 @@ read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
 precision = 'float32'
-#savedata = None # if not None, netcdf filename to save data.
-savedata = True # filename given by exptname env var
-nassim = 20 # assimilation times to run
+savedata = None # if not None, netcdf filename to save data.
+#savedata = True # filename given by exptname env var
+nassim = 200 # assimilation times to run
 
 nanals = 20 # ensemble members
 
@@ -366,7 +366,7 @@ for ntime in range(nassim):
     # hxens is ensemble in observation space.
     hxens = gethofx(uens,vens,ztop-dzens[:,1,...],indxob,nanals,nobs)
 
-    if savedata:
+    if savedata is not None:
         u_t[ntime] = u_truth[ntime+ntstart]
         u_b[ntime,:,:,:] = uens
         v_t[ntime] = v_truth[ntime+ntstart]
