@@ -353,6 +353,7 @@ def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,relax=0.015,eps=1.e-2,
     return uens_bal,vens_bal,dzens_bal
 
 def enstoctl(model,uens,vens,dzens,ivar=0):
+    xens = np.empty((nanals,6,Nt**2),dtype)
     if ivar==0:
         # update u,v
         xens[:,0:2,:] = uens[:].reshape(nanals,2,model.ft.Nt**2)
@@ -378,6 +379,9 @@ def enstoctl(model,uens,vens,dzens,ivar=0):
     return xens
 
 def ctltoens(model,xens,ivar=0):
+    uens = np.empty((nanals,2,Nt,Nt),dtype)
+    vens = np.empty((nanals,2,Nt,Nt),dtype)
+    dzens = np.empty((nanals,2,Nt,Nt),dtype)
     if ivar == 0:
         uens[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
         vens[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)

@@ -176,7 +176,6 @@ obs = np.empty(5*nobs,dtype)
 covlocal1 = np.empty(Nt**2,dtype)
 covlocal1_tmp = np.empty((nobs,Nt**2),dtype)
 covlocal_tmp = np.empty((5*nobs,Nt**2),dtype)
-xens = np.empty((nanals,6,Nt**2),dtype)
 if not use_letkf:
     obcovlocal1 = np.empty((nobs,nobs),dtype)
 else:
@@ -317,6 +316,7 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
     return hxens
 
 def enstoctl(model,uens,vens,dzens,ivar=0):
+    xens = np.empty((nanals,6,Nt**2),dtype)
     if ivar==0:
         # update u,v
         xens[:,0:2,:] = uens[:].reshape(nanals,2,model.ft.Nt**2)
@@ -342,6 +342,9 @@ def enstoctl(model,uens,vens,dzens,ivar=0):
     return xens
 
 def ctltoens(model,xens,ivar=0):
+    uens = np.empty((nanals,2,Nt,Nt),dtype)
+    vens = np.empty((nanals,2,Nt,Nt),dtype)
+    dzens = np.empty((nanals,2,Nt,Nt),dtype)
     if ivar == 0:
         uens[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
         vens[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
