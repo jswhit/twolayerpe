@@ -26,7 +26,7 @@ def getbal(model,vrt,div=None,adiab=False,dz1mean=None,dz2mean=None,nitermax=500
     dz = model.ft.spectogrd(dzspec)
     dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
     dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
-    if div == False: # don't compute balanced divergence
+    if type(div) == bool and div == False: # don't compute balanced divergence
         div = np.zeros(vrt.shape, vrt.dtype)
         return dz,div
     dzx,dzy = model.ft.getgrad(dz)
