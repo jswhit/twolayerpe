@@ -33,12 +33,6 @@ def getbal(model,vrt,div=None,adiab=False,dz1mean=None,dz2mean=None,nitermax=500
     urot = model.ft.spectogrd(-model.ft.il*psispec); vrot = model.ft.spectogrd(model.ft.ik*psispec)
 
     def nlbalance_tend(dvrtdt):
-        # ft: Fourier transform object
-        # f: coriolis param
-        # grav: gravity
-        # theta1,theta2: pot temp in each layer
-        # dvrtdt: vorticity tendency in each layer
-        # returns dz, layer thickness of each layer
         # solve tendency of nonlinear balance eqn to get layer thickness tendency
         # given vorticity tendency (psixx,psiyy and psixy already computed)
         dvrtspecdt = model.ft.grdtospec(dvrtdt)

@@ -64,6 +64,11 @@ profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
 baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
+ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
+if ivar == 0:
+    nlevs_update = 4
+else:
+    nlevs_update = 2
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
@@ -158,8 +163,8 @@ if not read_restart:
 else:
     ncinit.close()
 
-print("# hcovlocal=%g hcovlocal_unbal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
-     (hcovlocal_scale/1000.,hcovlocal_scale_unbal/1000.,use_letkf,covinflate1,covinflate2,nanals))
+print("# hcovlocal=%g hcovlocal_unbal=%g baldiv=%s  use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
+     (hcovlocal_scale/1000.,hcovlocal_scale_unbal/1000.,baldiv,use_letkf,covinflate1,covinflate2,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
@@ -347,6 +352,51 @@ def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,relax=0.015,eps=1.e-2,
         dzens_bal[nmem] = dzbal
     return uens_bal,vens_bal,dzens_bal
 
+def enstoctl(model,uens,vens,dzens,ivar=0):
+    if ivar==0:
+        # update u,v
+        xens[:,0:2,:] = uens[:].reshape(nanals,2,model.ft.Nt**2)
+        xens[:,2:4,:] = vens[:].reshape(nanals,2,model.ft.Nt**2)
+    elif ivar==1:
+        # update vort,div
+        for nmem in range(nanals):
+            vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
+            vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
+            xens[nmem,0:2,:] = vrt[:].reshape(2,model.ft.Nt**2)
+            xens[nmem,2:4,:] = div[:].reshape(2,model.ft.Nt**2)
+    elif ivar==2:
+        # update psi,chi
+        for nmem in range(nanals):
+            vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
+            psispec = model.ft.invlap*vrtspec; chispec = model.ft.invlap*psispec
+            psi = model.ft.spectogrd(psispec); chi = model.ft.spectogrd(psispec)
+            xens[nmem,0:2,:] = psi.reshape(2,model.ft.Nt**2)
+            xens[nmem,2:4,:] = chi.reshape(2,model.ft.Nt**2)
+    else: 
+        raise ValueError('ivar myst be 0,1,or 2')
+    xens[:,4:6,:] = dzens[:].reshape(nanals,2,model.ft.Nt**2)
+    return xens
+
+def ctltoens(model,xens,ivar=0):
+    if ivar == 0:
+        uens[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        vens[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    elif ivar == 1:
+        for nmem in range(nanals):
+            vrt = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
+            div = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
+            vrtspec = model.ft.grdtospec(vrt); divspec = model.ft.grdtospec(div)
+            uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
+    elif ivar == 2:
+        for nmem in range(nanals):
+            psi = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
+            chi = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
+            psispec = model.ft.grdtospec(psi); chispec = model.ft.grdtospec(chi)
+            vrtspec = model.ft.lap*psispec;  divspec = model.ft.lap*chispec
+            uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
+    dzens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    return uens,vens,dzens
+
 masstend_diag = 0.
 inflation_factor = np.ones((2,Nt,Nt))
 for ntime in range(nassim):
@@ -433,9 +483,7 @@ for ntime in range(nassim):
      zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag))
 
     # EnKF update for balanced part.
-    xens[:,0:2,:] = uens_bal[:].reshape(nanals,2,Nt**2)
-    xens[:,2:4,:] = vens_bal[:].reshape(nanals,2,Nt**2)
-    xens[:,4:6,:] = dzens_bal[:].reshape(nanals,2,Nt**2)
+    xens = enstoctl(model,uens_bal,vens_bal,dzens_bal,ivar=ivar)
     xensmean_b = xens.mean(axis=0)
     xprime = xens-xensmean_b
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
@@ -444,7 +492,7 @@ for ntime in range(nassim):
     if not debug_model: 
         if use_letkf:
             # only update first four fields (dzens_bal will be inferred from balanced u,v)
-            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs,nlevs_update=4) 
+            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs,nlevs_update=nlevs_update) 
         else:
             xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
         t2 = time.time()
@@ -467,18 +515,17 @@ for ntime in range(nassim):
         xprime = xprime*inflation_factor
         xens = xprime + xensmean_a
 
-    uens_bal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
-    vens_bal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
-    dzens_bal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
+    uens_bal,vens_bal,dzens_bal = ctltoens(model,xens,ivar=ivar)
+    #uens_bal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
+    #vens_bal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
+    #dzens_bal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
     # balance 'balanced' analysis ensemble
     uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv)
 
     if hcovlocal_scale_unbal > 1001: # otherwise don't update unbalanced part.
         # EnKF update for unbalanced part.
-        xens[:,0:2,:] = uens_unbal[:].reshape(nanals,2,Nt**2)
-        xens[:,2:4,:] = vens_unbal[:].reshape(nanals,2,Nt**2)
-        xens[:,4:6,:] = dzens_unbal[:].reshape(nanals,2,Nt**2)
+        xens = enstoctl(model,uens_unbal,vens_unbal,dzens_unbal,ivar=0)
         xensmean_b = xens.mean(axis=0)
         xprime = xens-xensmean_b
         fsprd = (xprime**2).sum(axis=0)/(nanals-1)
@@ -515,15 +562,14 @@ for ntime in range(nassim):
             xprime = xprime*inflation_factoru
             xens = xprime + xensmean_a
 
-        uens_unbal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
-        vens_unbal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
-        dzens_unbal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
+        uens_unbal,vens_unbal,dzens_unbal = ctltoens(model,xens,ivar=0)
 
     if hcovlocal_scale_unbal == 0:
+        # the unbalanced component of the analysis is set to zero
         uens = uens_bal
         vens = vens_bal
         dzens = dzens_bal
-        #dzens = dzens_bal + dzens_unbal # really only need this
+        #dzens = dzens_bal + dzens_unbal # really only need this (and only for ens mean)
     else:
         # note if hcovlocal_scale specified as 1 on command line, the unbalanced
         # component is not updated (background is just cycled)
