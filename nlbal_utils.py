@@ -130,8 +130,11 @@ if __name__ == "__main__":
     nc = Dataset(filename)
 
     ft = Fouriert(nc.N,nc.L,precision=str(nc['dz'].dtype))
+    model = TwoLayer(ft,nc.dt,zmid=nc.zmid,ztop=nc.ztop,tdrag=nc.tdrag,tdiab=nc.tdiab,\
+    umax=nc.umax,jetexp=nc.jetexp,theta1=nc.theta1,theta2=nc.theta2,diff_efold=nc.diff_efold)
 
     ntime = int(sys.argv[2])
+
     u = nc['u'][ntime]
     v = nc['v'][ntime]
     dz = nc['dz'][ntime]
@@ -139,13 +142,11 @@ if __name__ == "__main__":
     vrtspec, divspec = model.ft.getvrtdivspec(u,v)
     vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
 
-    model = TwoLayer(ft,nc.dt,zmid=nc.zmid,ztop=nc.ztop,tdrag=nc.tdrag,tdiab=nc.tdiab,\
-    umax=nc.umax,jetexp=nc.jetexp,theta1=nc.theta1,theta2=nc.theta2,diff_efold=nc.diff_efold)
     nc.close()
 
     # compute balanced layer thickness and divergence given vorticity.
-    dzbal,divbal = getbal(ft,model,vrt,div=None,adiab=True,dz1mean=dz[0].mean(),dz2mean=dz[1].mean(),\
-                   nitermax=1000,relax=0.02,eps=1.e-4,verbose=True)
+    dzbal,divbal = getbal(model,vrt,div=None,adiab=True,dz1mean=dz[0].mean(),dz2mean=dz[1].mean(),\
+                   nitermax=500,relax=0.02,eps=1.e-4,verbose=True)
 
     nlevplot = 1
     dzplot = dz[nlevplot]
