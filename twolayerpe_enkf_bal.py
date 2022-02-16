@@ -525,6 +525,8 @@ for ntime in range(nassim):
         dzens = dzens_bal
         #dzens = dzens_bal + dzens_unbal # really only need this
     else:
+        # note if hcovlocal_scale specified as 1 on command line, the unbalanced
+        # component is not updated (background is just cycled)
         uens = uens_bal + uens_unbal
         vens = vens_bal + vens_unbal
         dzens = dzens_bal + dzens_unbal
