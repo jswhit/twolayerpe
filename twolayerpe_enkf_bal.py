@@ -4,7 +4,6 @@ import sys, time, os
 from twolayer import TwoLayer, run_model
 from pyfft import Fouriert
 from enkf_utils import cartdist,letkf_update,serial_update,gaspcohn
-#from incbal_utils import getincbal
 from nlbal_utils import getbal
 from joblib import Parallel, delayed
 
@@ -64,6 +63,7 @@ diff_efold = None # use diffusion from climo file
 profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
+baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
@@ -128,15 +128,6 @@ dtype = model.dtype
 uens = np.empty((nanals,2,Nt,Nt),dtype)
 vens = np.empty((nanals,2,Nt,Nt),dtype)
 dzens = np.empty((nanals,2,Nt,Nt),dtype)
-uens_bal = np.empty(uens.shape,uens.dtype)
-vens_bal = np.empty(vens.shape,vens.dtype)
-dzens_bal = np.empty(dzens.shape,dzens.dtype)
-uens_unbal = np.empty(uens.shape,uens.dtype)
-vens_unbal = np.empty(vens.shape,vens.dtype)
-dzens_unbal = np.empty(dzens.shape,dzens.dtype)
-uens_inc = np.empty(uens.shape, uens.dtype)
-vens_inc = np.empty(vens.shape, vens.dtype)
-dzens_inc = np.empty(dzens.shape, dzens.dtype)
 if not read_restart:
     u_climo = nc_climo.variables['u']
     v_climo = nc_climo.variables['v']
@@ -333,6 +324,29 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
+def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,relax=0.015,eps=1.e-2,verbose=False):
+    nanals = uens.shape[0]
+    uens_bal = np.empty(uens.shape, uens.dtype)
+    vens_bal = np.empty(uens.shape, uens.dtype)
+    dzens_bal = np.empty(uens.shape, uens.dtype)
+    for nmem in range(nanals):
+        vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
+        vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
+        dz1mean = dzens[nmem,...][0].mean()
+        dz2mean = dzens[nmem,...][1].mean()
+        if baldiv:
+            dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
+                            nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+            divspec = model.ft.grdtospec(divbal)
+        else:
+            # no balanced divergence (much faster)
+            dzbal, divbal = getbal(model,vrt,div=False,dz1mean=dz1mean,dz2mean=dz2mean,\
+                            nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+            divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+        uens_bal[nmem], vens_bal[nmem] = model.ft.getuv(vrtspec,divspec)
+        dzens_bal[nmem] = dzbal
+    return uens_bal,vens_bal,dzens_bal
+
 masstend_diag = 0.
 inflation_factor = np.ones((2,Nt,Nt))
 for ntime in range(nassim):
@@ -385,21 +399,11 @@ for ntime in range(nassim):
     # split background into balanced and unbalanced parts
     # update balanced and unbalanced parts separately
     # (assuming no cross-covariance)
-    # impose balance constraint on balanced part of increment after the update
-    for nmem in range(nanals):
-        vrtspec, divspec = ft.getvrtdivspec(uens[nmem],vens[nmem])
-        vrt = ft.spectogrd(vrtspec); div = ft.spectogrd(divspec)
-        dz1mean = dzens[nmem,...][0].mean()
-        dz2mean = dzens[nmem,...][1].mean()
-        dzbal, divbal = getbal(ft,model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz1mean,\
-                        nitermax=1000,relax=0.015,eps=1.e-2,verbose=False)
-        divspec = ft.grdtospec(divbal)
-        uens_bal[nmem], vens_bal[nmem] = ft.getuv(vrtspec,divspec)
-        dzens_bal[nmem] = dzbal
-        uens_unbal[nmem]=uens[nmem]-uens_bal[nmem]
-        vens_unbal[nmem]=vens[nmem]-vens_bal[nmem]
-        dzens_unbal[nmem]=dzens[nmem]-dzens_bal[nmem]
-    uens_b = uens_bal.copy(); vens_b = vens_bal.copy(); dzens_b = dzens_bal.copy()
+    # impose balance constraint on balanced part of ens after the update
+    uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv)
+    uens_unbal = uens-uens_bal
+    vens_unbal = vens-vens_bal
+    dzens_unbal = dzens-dzens_bal
 
     # compute forward operator.
     # hxens is ensemble in observation space.
@@ -467,35 +471,8 @@ for ntime in range(nassim):
     vens_bal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
     dzens_bal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
-    # impose incremental balance on 'balanced' increment
-    #for nmem in range(nanals):
-    #    uinc = uens_bal[nmem] - uens_b[nmem]
-    #    vinc = vens_bal[nmem] - vens_b[nmem]
-    #    dzinc = dzens_bal[nmem] - dzens_b[nmem]
-    #    vrtspec, divspec = ft.getvrtdivspec(uinc,vinc)
-    #    vrtinc = ft.spectogrd(vrtspec); divinc = ft.spectogrd(divspec)
-    #    vrtspec, divspec = ft.getvrtdivspec(uens_b[nmem],vens_b[nmem])
-    #    vrt_b = ft.spectogrd(vrtspec); div_b = ft.spectogrd(divspec)
-    #    # compute balanced layer thickness and divergence given vorticity.
-    #    dzincbal,divincbal = getincbal(ft,model,dzens_b[nmem],vrt_b,div_b,vrtinc,div=None,\
-    #                         nitermax=1000,relax=0.015,eps=1.e-3,verbose=False)
-    #    dzens_inc[nmem] = dzincbal
-    #    vrtspec = ft.grdtospec(vrtinc); divspec = ft.grdtospec(divincbal)
-    #    uens_inc[nmem], vens_inc[nmem] = ft.getuv(vrtspec, divspec)
-    #uens_bal=uens_b+uens_inc
-    #vens_bal=vens_b+vens_inc
-    #dzens_bal=dzens_b+dzens_inc
-
-    # or.. balance total fields
-    for nmem in range(nanals):
-        vrtspec, divspec = ft.getvrtdivspec(uens_bal[nmem],vens_bal[nmem])
-        vrt = ft.spectogrd(vrtspec); div = ft.spectogrd(divspec)
-        dz1mean = dzens_bal[nmem,...][0].mean()
-        dz2mean = dzens_bal[nmem,...][1].mean()
-        dzbal, divbal = getbal(ft,model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,nitermax=500,relax=0.015,eps=1.e-2,verbose=False)
-        divspec = ft.grdtospec(divbal)
-        uens_bal[nmem], vens_bal[nmem] = ft.getuv(vrtspec,divspec)
-        dzens_bal[nmem] = dzbal
+    # balance 'balanced' analysis ensemble
+    uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv)
 
     if hcovlocal_scale_unbal > 1001: # otherwise don't update unbalanced part.
         # EnKF update for unbalanced part.
