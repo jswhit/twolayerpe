@@ -114,9 +114,15 @@ def pvinvert(model,pv,dz=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15
     """computes balanced layer thickness and streamfunction given potential vorticity."""
 
     if dz1mean is None:
-        dz1mean = model.zmid
+        if dz is None:
+            dz1mean = model.zmid
+        else:
+            dz1mean = dz[0].mean()
     if dz2mean is None:
-        dz2mean = model.ztop - model.zmid
+        if dz is None:
+            dz2mean = model.ztop - model.zmid
+        else:
+            dz2mean = dz[1].mean()
     if dz is None:
         dz = np.empty(pv.shape, pv.dtype)
         dz[0] = dz1mean; dz[1] = dz2mean
@@ -152,7 +158,7 @@ def pvinvert(model,pv,dz=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15
         dzmean = np.sqrt((dz**2).mean())
         vrtmean = np.sqrt((vrt**2).mean())
         if verbose: print(niter, dzdiffmean, dzdiffmean/dzmean, vrtdiffmean, vrtdiffmean/vrtmean )
-        if dzdiffmean/dzmean < eps and vrtdiffmean/vrtmean < eps:    
+        if dzdiffmean/dzmean < eps < eps:    
             converged = True
             break
     if not converged:
