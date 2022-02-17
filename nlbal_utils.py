@@ -110,18 +110,21 @@ def getbal(model,vrt,div=None,adiab=False,dz1mean=None,dz2mean=None,nitermax=500
 
     return dz,div
 
-def pvinvert(model,pv,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15,eps=1.e-4,nodiv=False,adiab=False,verbose=False):
+def pvinvert(model,pv,dz=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15,eps=1.e-4,nodiv=False,adiab=False,verbose=False):
     """computes balanced layer thickness and streamfunction given potential vorticity."""
 
     if dz1mean is None:
         dz1mean = model.zmid
     if dz2mean is None:
         dz2mean = model.ztop - model.zmid
-    dz = np.empty(pv.shape, pv.dtype)
-    dz[0] = dz1mean; dz[1] = dz2mean
+    if dz is None:
+        dz = np.empty(pv.shape, pv.dtype)
+        vrt = np.zeros(pv.shape, pv.dtype)
+        dz[0] = dz1mean; dz[1] = dz2mean
     converged = False
     for niter in range(nitermax):
         # compute vorticity from PV using initial guess of dz
+        vrtprev = vrt.copy()
         vrt = pv*dz - model.f
         vrtspec = model.ft.grdtospec(vrt)
         # solve nonlinear balance equation to get next estimate of dz
@@ -142,11 +145,14 @@ def pvinvert(model,pv,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15,eps=1.e
         dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
         dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
         dzdiff = dz-dzprev
+        vrtdiff = vrt-vrtprev
         dz = dzprev + relax*dzdiff
         dzdiffmean = np.sqrt((dzdiff**2).mean())
+        vrtdiffmean = np.sqrt((vrtdiff**2).mean())
         dzmean = np.sqrt((dz**2).mean())
-        if verbose: print(niter, dzdiffmean, dzdiffmean/dzmean )
-        if dzdiffmean/dzmean < eps:    
+        vrtmean = np.sqrt((vrt**2).mean())
+        if verbose: print(niter, dzdiffmean, dzdiffmean/dzmean, vrtdiffmean, vrtdiffmean/vrtmean )
+        if dzdiffmean/dzmean < eps and vrtdiffmean/vrtmean < eps:    
             converged = True
             break
     if not converged:
