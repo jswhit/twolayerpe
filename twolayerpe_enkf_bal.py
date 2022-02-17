@@ -75,15 +75,16 @@ posterior_stats = False
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 200 # assimilation times to run
+nassim = 30 # assimilation times to run
 
 nanals = 20 # ensemble members
 
 oberrstdev_zmid = 100.  # interface height ob error in meters
-oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
+#oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
+oberrstdev_wind = 1.e30 # don't assimilate winds
 
 # nature run created using twolayer_naturerun.py.
-filename_climo = 'twolayerpe_N64_24hrly.nc' # file name for forecast model climo
+filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model climo
 # perfect model
 filename_truth = filename_climo
 
@@ -329,25 +330,32 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,relax=0.015,eps=1.e-2,verbose=False):
+def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,div=None,relax=0.015,eps=1.e-2,verbose=False):
+    if not baldiv:
+        div=False
+    if not (type(div) == bool or div == None):
+        # div=True means use calculate div as guess for balanced div
+        # div=None means initialize balanced div as zero
+        # div=False means don't compute balanced div (assume zero)
+        raise ValueError('div must be True,False or None')
     nanals = uens.shape[0]
     uens_bal = np.empty(uens.shape, uens.dtype)
     vens_bal = np.empty(uens.shape, uens.dtype)
     dzens_bal = np.empty(uens.shape, uens.dtype)
     for nmem in range(nanals):
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
-        vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
+        vrt = model.ft.spectogrd(vrtspec)
+        if type(div) == bool and div==True:
+            div = model.ft.spectogrd(divspec)
         dz1mean = dzens[nmem,...][0].mean()
         dz2mean = dzens[nmem,...][1].mean()
-        if baldiv:
-            dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
-                            nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-            divspec = model.ft.grdtospec(divbal)
-        else:
+        dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
+                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+        if div==False:
             # no balanced divergence (much faster)
-            dzbal, divbal = getbal(model,vrt,div=False,dz1mean=dz1mean,dz2mean=dz2mean,\
-                            nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
             divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+        else:
+            divspec = model.ft.grdtospec(divbal)
         uens_bal[nmem], vens_bal[nmem] = model.ft.getuv(vrtspec,divspec)
         dzens_bal[nmem] = dzbal
     return uens_bal,vens_bal,dzens_bal
