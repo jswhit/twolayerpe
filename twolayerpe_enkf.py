@@ -64,15 +64,16 @@ posterior_stats = False
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 200 # assimilation times to run
+nassim = 300 # assimilation times to run
 
 nanals = 20 # ensemble members
 
 oberrstdev_zmid = 100.  # interface height ob error in meters
-oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
+#oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
+oberrstdev_wind = 1.e30 # don't assimilate winds
 
 # nature run created using twolayer_naturerun.py.
-filename_climo = 'twolayerpe_N64_24hrly.nc' # file name for forecast model climo
+filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model climo
 # perfect model
 filename_truth = filename_climo
 
