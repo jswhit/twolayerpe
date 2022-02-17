@@ -110,28 +110,32 @@ def getbal(model,vrt,div=None,adiab=False,dz1mean=None,dz2mean=None,nitermax=500
 
     return dz,div
 
-def pvinvert(model,pv,dz=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15,eps=1.e-4,nodiv=False,adiab=False,verbose=False):
+def pvinvert(model,pv,dzin=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15,eps=1.e-4,nodiv=False,adiab=False,verbose=False):
     """computes balanced layer thickness and streamfunction given potential vorticity."""
 
     if dz1mean is None:
-        if dz is None:
+        if dzin is None:
             dz1mean = model.zmid
         else:
-            dz1mean = dz[0].mean()
+            dz1mean = dzin[0].mean()
     if dz2mean is None:
-        if dz is None:
+        if dzin is None:
             dz2mean = model.ztop - model.zmid
         else:
-            dz2mean = dz[1].mean()
-    if dz is None:
-        dz = np.empty(pv.shape, pv.dtype)
+            dz2mean = dzin[1].mean()
+    if dzin is None:
+        dz = np.zeros(pv.shape, pv.dtype)
         dz[0] = dz1mean; dz[1] = dz2mean
+    else:
+        dz = dzin.copy()
+    dzref = np.empty(dz.shape,dz.dtype); dzref[0] = dz1mean; dzref[1] = dz2mean
+    dz -= dzref
     converged = False
     vrt = np.zeros(pv.shape, pv.dtype)
     for niter in range(nitermax):
         # compute vorticity from PV using initial guess of dz
         vrtprev = vrt.copy()
-        vrt = pv*dz - model.f
+        vrt = pv*(dz+dzref) - model.f
         vrtspec = model.ft.grdtospec(vrt)
         # solve nonlinear balance equation to get next estimate of dz
         psispec = model.ft.invlap*vrtspec
@@ -148,8 +152,8 @@ def pvinvert(model,pv,dz=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15
         # set area mean in grid space to state of rest value
         dzprev = dz.copy()
         dz = model.ft.spectogrd(dzspec)
-        dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
-        dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
+        #dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
+        #dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
         dzdiff = dz-dzprev
         vrtdiff = vrt-vrtprev
         dz = dzprev + relax*dzdiff
@@ -164,6 +168,7 @@ def pvinvert(model,pv,dz=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15
     if not converged:
         raise RuntimeError('pv inversion solution did not converge')
 
+    dz += dzref
     if nodiv: # don't compute balanced divergence
         div = np.zeros(vrt.shape, vrt.dtype)
         return dz,vrt,div
@@ -274,8 +279,8 @@ if __name__ == "__main__":
     vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
     pv = (vrt + model.f)/dz
     # invert pv
-    dzbal, vrtbal, divbal = pvinvert(model,pv,dz1mean=dz[0].mean(),dz2mean=dz[1].mean(),\
-                                     relax=0.02,eps=1.e-4,verbose=True)
+    dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dz,\
+                                     relax=0.015,eps=1.e-4,verbose=True)
     print('after pv inversion:')
     print(dz.min(), dz.max())
     print(dzbal.min(), dzbal.max())
