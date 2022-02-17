@@ -18,7 +18,7 @@ ft = Fouriert(N,L,threads=threads,precision=precision)
 model=TwoLayer(ft,dt,theta2=320,umax=12.5,jetexp=2)
 
 dtype = model.dtype
-hrout = 24
+hrout = 6
 outputinterval = hrout*3600. # output interval 
 tmin = 100.*86400. # time to start saving data (in days)
 tmax = 300.*86400. # time to stop (in days)
@@ -46,7 +46,7 @@ vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
 if lyrthkg.min() < 0:
     raise ValueError('negative layer thickness! adjust jet parameters')
 
-savedata = 'twolayerpe_N%s_%shrly_sp.nc' % (N,hrout) # save data plotted in a netcdf file.
+savedata = 'twolayerpe_N%s_%shrly.nc' % (N,hrout) # save data plotted in a netcdf file.
 #savedata = None # don't save data
 
 if savedata is not None:
