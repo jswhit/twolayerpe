@@ -152,8 +152,8 @@ def pvinvert(model,pv,dzin=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.
         # set area mean in grid space to state of rest value
         dzprev = dz.copy()
         dz = model.ft.spectogrd(dzspec)
-        #dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
-        #dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
+        dz[0,...] = dz[0,...] - dz[0,...].mean() 
+        dz[1,...] = dz[1,...] - dz[1,...].mean()
         dzdiff = dz-dzprev
         vrtdiff = vrt-vrtprev
         dz = dzprev + relax*dzdiff
