@@ -119,6 +119,7 @@ def pvinvert(model,pv,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15,eps=1.e
         dz2mean = model.ztop - model.zmid
     dz = np.empty(pv.shape, pv.dtype)
     dz[0] = dz1mean; dz[1] = dz2mean
+    converged = False
     for niter in range(nitermax):
         # compute vorticity from PV using initial guess of dz
         vrt = pv*dz - model.f
@@ -262,7 +263,7 @@ if __name__ == "__main__":
     pv = (vrt + model.f)/dz
     # invert pv
     dzbal, vrtbal, divbal = pvinvert(model,pv,dz1mean=dz[0].mean(),dz2mean=dz[1].mean(),\
-                                     relax=0.015,eps=1.e-4,verbose=True)
+                                     relax=0.02,eps=1.e-4,verbose=True)
     print('after pv inversion:')
     print(dz.min(), dz.max())
     print(dzbal.min(), dzbal.max())
