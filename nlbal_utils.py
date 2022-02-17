@@ -158,7 +158,7 @@ def pvinvert(model,pv,dz=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15
         dzmean = np.sqrt((dz**2).mean())
         vrtmean = np.sqrt((vrt**2).mean())
         if verbose: print(niter, dzdiffmean, dzdiffmean/dzmean, vrtdiffmean, vrtdiffmean/vrtmean )
-        if dzdiffmean/dzmean < eps < eps:    
+        if dzdiffmean/dzmean < eps:    
             converged = True
             break
     if not converged:
