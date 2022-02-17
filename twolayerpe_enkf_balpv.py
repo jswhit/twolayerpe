@@ -64,7 +64,7 @@ profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
 baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
-ivar = 1 # 0 for u,v update, 1 for pv
+ivar = 0 # 0 for u,v update, 1 for pv
 if ivar == 0:
     nlevs_update = 4
 else:
@@ -335,7 +335,7 @@ if baldiv:
 else:
     nodiv = True
 
-def balens(model,uens,vens,dzens,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-3,verbose=False):
+def balens(model,uens,vens,dzens,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False):
     nanals = uens.shape[0]
     uens_bal = np.empty(uens.shape, uens.dtype)
     vens_bal = np.empty(uens.shape, uens.dtype)
@@ -344,9 +344,7 @@ def balens(model,uens,vens,dzens,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-3,
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
         vrt = model.ft.spectogrd(vrtspec)
         pv = (vrt + model.f)/dzens[nmem]
-        dz1mean = dzens[nmem,...][0].mean()
-        dz2mean = dzens[nmem,...][1].mean()
-        dzbal, vrtbal, divbal = pvinvert(model,pv,nodiv=nodiv,dz1mean=dz1mean,dz2mean=dz2mean,\
+        dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dzens[nmem],nodiv=nodiv,\
                                 nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
         vrtspec = model.ft.grdtospec(vrtbal)
         if nodiv:
@@ -378,7 +376,7 @@ def enstoctl(model,uens,vens,dzens,ivar=0):
     return xens
 
 def ctltoens(model,xens,ivar=0,nodiv=True,
-             nitermax=1000,relax=0.015,eps=1.e-3,verbose=False):
+             nitermax=1000,relax=0.015,eps=1.e-4,verbose=False):
     uens = np.empty((nanals,2,Nt,Nt),dtype)
     vens = np.empty((nanals,2,Nt,Nt),dtype)
     dzens = np.empty((nanals,2,Nt,Nt),dtype)
@@ -390,10 +388,8 @@ def ctltoens(model,xens,ivar=0,nodiv=True,
         for nmem in range(nanals):
             pv = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
             dz = xens[nmem,4:6,:].reshape(2,model.ft.Nt,model.ft.Nt) # equal to background, not updated
-            dz1mean = dz[0].mean()
-            dz2mean = dz[1].mean()
             # invert pv balanced u,v,dz
-            dzbal, vrtbal, divbal = pvinvert(model,pv,nodiv=nodiv,dz1mean=dz1mean,dz2mean=dz2mean,\
+            dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dz,nodiv=nodiv,\
                                     nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
             vrtspec = model.ft.grdtospec(vrtbal); divspec = model.ft.grdtospec(divbal)
             uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
