@@ -75,7 +75,7 @@ posterior_stats = False
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 30 # assimilation times to run
+nassim = 300 # assimilation times to run
 
 nanals = 20 # ensemble members
 
@@ -330,14 +330,10 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,div=None,relax=0.015,eps=1.e-2,verbose=False):
+def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,divguess=False,relax=0.015,eps=1.e-2,verbose=False):
     if not baldiv:
-        div=False
-    if not (type(div) == bool or div == None):
-        # div=True means use calculate div as guess for balanced div
-        # div=None means initialize balanced div as zero
-        # div=False means don't compute balanced div (assume zero)
-        raise ValueError('div must be True,False or None')
+        # balanced div assumed zero
+        divguess=None
     nanals = uens.shape[0]
     uens_bal = np.empty(uens.shape, uens.dtype)
     vens_bal = np.empty(uens.shape, uens.dtype)
@@ -345,8 +341,12 @@ def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,div=None,relax=0.015,e
     for nmem in range(nanals):
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
         vrt = model.ft.spectogrd(vrtspec)
-        if type(div) == bool and div==True:
-            div = model.ft.spectogrd(divspec)
+        if divguess==True:
+            div = model.ft.spectogrd(divspec) # use calculated div as initial guess
+        elif divguess==False:
+            div = None # use zeros as initial guess
+        else:
+            div = False # don't compute balanced div
         dz1mean = dzens[nmem,...][0].mean()
         dz2mean = dzens[nmem,...][1].mean()
         dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
