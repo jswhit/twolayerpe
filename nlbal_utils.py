@@ -131,10 +131,8 @@ def pvinvert(model,pv,dzin=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.
     dzref = np.empty(dz.shape,dz.dtype); dzref[0] = dz1mean; dzref[1] = dz2mean
     dz -= dzref
     converged = False
-    vrt = np.zeros(pv.shape, pv.dtype)
     for niter in range(nitermax):
         # compute vorticity from PV using initial guess of dz
-        vrtprev = vrt.copy()
         vrt = pv*(dz+dzref) - model.f
         vrtspec = model.ft.grdtospec(vrt)
         # solve nonlinear balance equation to get next estimate of dz
@@ -149,20 +147,14 @@ def pvinvert(model,pv,dzin=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.
         dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(model.theta2-model.theta1)
         dzspec[0,...] -= dzspec[1,...]
         dzspec = (model.theta1/model.grav)*dzspec # convert from exner function to height units (m)
-        # set area mean in grid space to state of rest value
         dzprev = dz.copy()
         dz = model.ft.spectogrd(dzspec)
-        dz[0,...] = dz[0,...] - dz[0,...].mean() 
-        dz[1,...] = dz[1,...] - dz[1,...].mean()
         dzdiff = dz-dzprev
-        vrtdiff = vrt-vrtprev
         dz = dzprev + relax*dzdiff
         dzdiffmean = np.sqrt((dzdiff**2).mean())
-        vrtdiffmean = np.sqrt((vrtdiff**2).mean())
         dzmean = np.sqrt((dz**2).mean())
-        vrtmean = np.sqrt((vrt**2).mean())
-        if verbose: print(niter, dzdiffmean, dzdiffmean/dzmean, vrtdiffmean, vrtdiffmean/vrtmean )
-        if dzdiffmean/dzmean < eps:    
+        if verbose: print(niter, dzdiffmean, dzdiffmean/dzmean)
+        if dzdiffmean/dzmean < eps:
             converged = True
             break
     if not converged:
