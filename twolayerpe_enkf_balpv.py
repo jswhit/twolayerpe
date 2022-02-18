@@ -346,6 +346,10 @@ def balens(model,uens,vens,dzens,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,
         pv = (vrt + model.f)/dzens[nmem]
         dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dzens[nmem],nodiv=nodiv,\
                                 nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+        #dz1mean = dzens[nmem,0,...].mean()
+        #dz2mean = dzens[nmem,1,...].mean()
+        #dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=None,dz1mean=dz1mean,dz2mean=dz2mean,nodiv=nodiv,\
+        #                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
         vrtspec = model.ft.grdtospec(vrtbal)
         if nodiv:
             # no balanced divergence.
