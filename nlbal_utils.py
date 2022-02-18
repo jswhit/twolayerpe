@@ -276,6 +276,7 @@ if __name__ == "__main__":
     print('after pv inversion:')
     print(dz.min(), dz.max())
     print(dzbal.min(), dzbal.max())
+    print((dz-dzbal).min(), (dz-dzbal).max())
     print(vrt.min(), vrt.max())
     print(vrtbal.min(), vrtbal.max())
     print(div.min(), div.max())
