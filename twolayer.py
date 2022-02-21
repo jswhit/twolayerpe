@@ -141,6 +141,30 @@ class TwoLayer(object):
         self.t += dt
         return vrtspec,divspec,dzspec
 
+    def rk4step_iau(self,vrtspec,divspec,dzspec,fvrtspec,fdivspec,fdzspec):
+        # update state using 4th order runge-kutta
+        dt = self.dt
+        k1vrt,k1div,k1thk = \
+        self.gettend(vrtspec,divspec,dzspec)
+        k1vrt += fvrtspec; k1div += fdivspec; k1thk += fdzspec
+        masstendspec = k1thk.sum(axis=0)
+        # parameter measuring vertically integrated mass tend amplitude (external mode imbalance)
+        self.masstendvar = ((masstendspec*np.conjugate(masstendspec)).real).sum() 
+        k2vrt,k2div,k2thk = \
+        self.gettend(vrtspec+0.5*dt*k1vrt,divspec+0.5*dt*k1div,dzspec+0.5*dt*k1thk)
+        k2vrt += fvrtspec; k2div += fdivspec; k2thk += fdzspec
+        k3vrt,k3div,k3thk = \
+        self.gettend(vrtspec+0.5*dt*k2vrt,divspec+0.5*dt*k2div,dzspec+0.5*dt*k2thk)
+        k3vrt += fvrtspec; k3div += fdivspec; k3thk += fdzspec
+        k4vrt,k4div,k4thk = \
+        self.gettend(vrtspec+dt*k3vrt,divspec+dt*k3div,dzspec+dt*k3thk)
+        k4vrt += fvrtspec; k4div += fdivspec; k4thk += fdzspec
+        vrtspec += dt*(k1vrt+2.*k2vrt+2.*k3vrt+k4vrt)/6.
+        divspec += dt*(k1div+2.*k2div+2.*k3div+k4div)/6.
+        dzspec += dt*(k1thk+2.*k2thk+2.*k3thk+k4thk)/6.
+        self.t += dt
+        return vrtspec,divspec,dzspec
+
     def advance(self,vrt,div,dz,grid=False):
         # advance forward number of timesteps given by 'timesteps' instance var.
         # if grid==True, inputs and outputs  are u,v,dz on grid, otherwise
@@ -169,6 +193,21 @@ def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=330,f=1.e-4,\
     dzspec = ft.grdtospec(dz)
     for n in range(timesteps):
         vrtspec, divspec, dzspec = model.rk4step(vrtspec,divspec,dzspec)
+    u, v = ft.getuv(vrtspec,divspec)
+    dz = ft.spectogrd(dzspec)
+    return u,v,dz,model.masstendvar
+
+def run_model_iau(u,v,dz,uinc,vinc,dzinc,wts,N,L,dt,timesteps,theta1=300,theta2=330,f=1.e-4,\
+              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=0):
+    ft = Fouriert(N,L,threads=1)
+    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,\
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
+    vrtspec, divspec = ft.getvrtdivspec(u,v)
+    fvrtspec, fdivspec = ft.getvrtdivspec(uinc,vinc)
+    dzspec = ft.grdtospec(dz)
+    fdzspec = ft.grdtospec(dzinc)
+    for n in range(timesteps):
+        vrtspec, divspec, dzspec = model.rk4step_iau(vrtspec,divspec,dzspec,wts[n]*fvrtspec,wts[n]*fdivspec,wts[n]*fdzspec)
     u, v = ft.getuv(vrtspec,divspec)
     dz = ft.spectogrd(dzspec)
     return u,v,dz,model.masstendvar

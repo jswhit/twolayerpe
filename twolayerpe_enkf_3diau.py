@@ -1,7 +1,7 @@
 import numpy as np
 from netCDF4 import Dataset
 import sys, time, os
-from twolayer import TwoLayer, run_model
+from twolayer import TwoLayer, run_model, run_model_iau
 from pyfft import Fouriert
 from enkf_utils import cartdist,letkf_update,serial_update,gaspcohn
 from joblib import Parallel, delayed
@@ -49,7 +49,7 @@ else:
 
 exptname = os.getenv('exptname','test')
 # get envar to set number of multiprocessing jobs for LETKF and ensemble forecast
-n_jobs = int(os.getenv('N_JOBS','0'))
+n_jobs = int(os.getenv('N_JOBS','1'))
 threads = 1
 
 diff_efold = None # use diffusion from climo file
@@ -64,7 +64,7 @@ posterior_stats = False
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 800 # assimilation times to run
+nassim = 50 # assimilation times to run
 
 nanals = 20 # ensemble members
 
@@ -191,7 +191,7 @@ else:
     ntstart = 0
 assim_interval = obtimes[1]-obtimes[0]
 nsteps_iau = int(np.round(0.5*assim_interval/model.dt)) 
-assim_timesteps = int(np.round(1.5*assim_interval/model.dt))
+assim_timesteps = int(np.round(assim_interval/model.dt))
 print('# assim_interval = %s assim_timesteps = %s' % (assim_interval,assim_timesteps))
 print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,masstend_diag')
 
@@ -199,21 +199,26 @@ print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,masst
 model.t = obtimes[ntstart]
 model.timesteps = assim_timesteps
 
-# Lanczos weights
-wts_iau = np.empty(2*nsteps_iau,np.float32)
-mm = nsteps_iau + 0.5
-for k in range(1,2*nsteps_iau+1):
-    kk = float(k)-float(mm)
-    sx = np.pi*kk/float(mm)
-    wx = np.pi*kk/float(mm+1)
-    if kk != 0:
-       hk = np.sin(sx)/(np.pi*kk) # hk --> 1./mm when sx --> 0
-       wts_iau[k-1] = (np.sin(wx)/wx)*hk # Lanczos
-    else:
-       wts_iau[k-1] = 1./float(mm)
-    #print(k,kk,wts_iau[k-1])
-wts_iau = (2.*nsteps_iau/assim_interval)*wts_iau/wts_iau.sum()
-#print(wts_iau,wts_iau.mean(),1./assim_interval)
+# constant IAU weights
+use_iau = True
+iau_filter_weights = False
+wts_iau = np.ones(2*nsteps_iau,np.float32)/assim_interval
+if iau_filter_weights:
+    # Lanczos IAU weights
+    wts_iau = np.empty(2*nsteps_iau,np.float32)
+    mm = nsteps_iau + 0.5
+    for k in range(1,2*nsteps_iau+1):
+        kk = float(k)-float(mm)
+        sx = np.pi*kk/float(mm)
+        wx = np.pi*kk/float(mm+1)
+        if kk != 0:
+           hk = np.sin(sx)/(np.pi*kk) # hk --> 1./mm when sx --> 0
+           wts_iau[k-1] = (np.sin(wx)/wx)*hk # Lanczos
+        else:
+           wts_iau[k-1] = 1./float(mm)
+        #print(k,kk,wts_iau[k-1])
+    wts_iau = (2.*nsteps_iau/assim_interval)*wts_iau/wts_iau.sum()
+    #print(wts_iau,wts_iau.mean(),1./assim_interval)
 
 # initialize output file.
 if savedata is not None:
@@ -516,27 +521,37 @@ for ntime in range(nassim):
         nc.sync()
 
     # run forecast ensemble to next analysis time
-    if ntime == 0:
+    if ntime == 0 or not use_iau:
         uens = uens_a; vens = vens_a; dzens = dzens_a
         t1 = time.time()
         tstart = model.t
-        if n_jobs == 0:
-            masstend_diag=0.
-            for nanal in range(nanals): 
-                uens[nanal],vens[nanal],dzens[nanal] = model.advance(uens[nanal],vens[nanal],dzens[nanal],grid=True)
-                masstend_diag+=model.masstendvar/nanals
-        else:
-            # use joblib to run ens members on different cores (N_JOBS env var sets number of tasks).
-            results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
-            masstend_diag=0.
-            for nanal in range(nanals):
-                uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
-                masstend_diag+=mtend/nanals
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        for nanal in range(nanals):
+            uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+        uens_save=uens.copy(); vens_save=vens.copy(); dzens_save=dzens.copy()
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        masstend_diag=0.
+        for nanal in range(nanals):
+            uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+            masstend_diag+=mtend/nanals
         model.t = tstart + dt*assim_timesteps
         t2 = time.time()
         if profile: print('cpu time for ens forecast',t2-t1)
     else:
         # initialize from end of previous IAU window, run across IAU window with forcing
+        tstart = model.t
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model_iau)(uens_save[nanal],vens_save[nanal],dzens_save[nanal],uens_inc[nanal],vens_inc[nanal],dzens_inc[nanal],wts_iau,N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        for nanal in range(nanals):
+            uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+        uens_save=uens.copy(); vens_save=vens.copy(); dzens_save=dzens.copy()
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        masstend_diag=0.
+        for nanal in range(nanals):
+            uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+            masstend_diag+=mtend/nanals
+        model.t = tstart + dt*assim_timesteps
+        t2 = time.time()
+        if profile: print('cpu time for ens forecast',t2-t1)
         pass
 
 if savedata: nc.close()
