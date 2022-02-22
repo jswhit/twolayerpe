@@ -209,11 +209,13 @@ def run_model_iau(u,v,dz,uinc,vinc,dzinc,wts,N,L,dt,timesteps,theta1=300,theta2=
         fdzspec = ft.grdtospec(dzinc)
         for n in range(timesteps):
             vrtspec, divspec, dzspec = model.rk4step_iau(vrtspec,divspec,dzspec,wts[n]*fvrtspec,wts[n]*fdivspec,wts[n]*fdzspec)
-    else: # 4diau (increments already interpolated to timestep)
+    elif len(uinc.shape) == 4: # 4diau (increments already interpolated to model timestep)
         for n in range(timesteps):
             fvrtspec, fdivspec = ft.getvrtdivspec(uinc[n],vinc[n])
             fdzspec = ft.grdtospec(dzinc[n])
             vrtspec, divspec, dzspec = model.rk4step_iau(vrtspec,divspec,dzspec,wts[n]*fvrtspec,wts[n]*fdivspec,wts[n]*fdzspec)
+    else:
+        raise ValueError('increments must be 3d or 4d arrays')
         
     u, v = ft.getuv(vrtspec,divspec)
     dz = ft.spectogrd(dzspec)

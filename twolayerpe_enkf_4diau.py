@@ -637,19 +637,19 @@ for ntime in range(nassim):
         uens_inc = np.empty((assim_timesteps,nanals,2,model.ft.Nt,model.ft.Nt),model.ft.dtype)
         vens_inc = np.empty((assim_timesteps,nanals,2,model.ft.Nt,model.ft.Nt),model.ft.dtype)
         dzens_inc = np.empty((assim_timesteps,nanals,2,model.ft.Nt,model.ft.Nt),model.ft.dtype)
-        nsteps = assim_timesteps//2
-        for n in range(nsteps):
-            wt2 = float(n)/float(nsteps)
+        assim_timesteps//2 = assim_timesteps//2
+        for n in range(assim_timesteps//2):
+            wt2 = float(n)/float(assim_timesteps//2)
             wt1 = 1.-wt2
             uens_inc[n] = wt1*uens_inc_beg + wt2*uens_inc_mid
             vens_inc[n] = wt1*vens_inc_beg + wt2*vens_inc_mid
             dzens_inc[n] = wt1*dzens_inc_beg + wt2*dzens_inc_mid
-        for n in range(nsteps):
-            wt2 = float(n)/float(nsteps)
+        for n in range(assim_timesteps//2):
+            wt2 = float(n)/float(assim_timesteps//2)
             wt1 = 1.-wt2
-            uens_inc[nsteps+n] = wt1*uens_inc_mid + wt2*uens_inc_end
-            vens_inc[nsteps+n] = wt1*vens_inc_mid + wt2*vens_inc_end
-            dzens_inc[nsteps+n] = wt1*dzens_inc_mid + wt2*dzens_inc_end
+            uens_inc[assim_timesteps//2+n] = wt1*uens_inc_mid + wt2*uens_inc_end
+            vens_inc[assim_timesteps//2+n] = wt1*vens_inc_mid + wt2*vens_inc_end
+            dzens_inc[assim_timesteps//2+n] = wt1*dzens_inc_mid + wt2*dzens_inc_end
         results = Parallel(n_jobs=n_jobs)(delayed(run_model_iau)(uens_beg[nanal],vens_beg[nanal],dzens_beg[nanal],uens_inc[:,nanal,...],vens_inc[:,nanal,...],dzens_inc[:,nanal,...],wts_iau,N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
