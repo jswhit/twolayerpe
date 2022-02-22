@@ -479,16 +479,16 @@ for ntime in range(nassim):
         if covinflate2 < 0:
             # relaxation to prior stdev (Whitaker & Hamill 2012)
             asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
-            inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
+            inflation_factor2 = 1.+covinflate1*(fsprd-asprd)/asprd
         else:
             # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
             # model, linear gaussian scenario)
             # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
             inc = xensmean_a - xensmean_b
-            inflation_factor = covinflate1*asprd + \
+            inflation_factor2 = covinflate1*asprd + \
             (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
-            inflation_factor = np.sqrt(inflation_factor/asprd)
-        xprime = xprime*inflation_factor
+            inflation_factor2 = np.sqrt(inflation_factor2/asprd)
+        xprime = xprime*inflation_factor2
         xens = xprime + xensmean_a
 
         # back to 3d state vector
@@ -507,7 +507,7 @@ for ntime in range(nassim):
 
     # prior stats.
     vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens,vens,dzens,\
+    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens_b,vens_b,dzens_b,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
     print("%s %g %g %g %g %g %g %g %g %g %g" %\
     (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
@@ -552,7 +552,7 @@ for ntime in range(nassim):
     # posterior stats
     if posterior_stats:
         vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-        zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens,vens,dzens,\
+        zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=getspreaderr(uens_a,vens_a,dzens_a,\
         u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
         print("%s %g %g %g %g %g %g %g %g" %\
         (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
@@ -582,16 +582,16 @@ for ntime in range(nassim):
         if covinflate2 < 0:
             # relaxation to prior stdev (Whitaker & Hamill 2012)
             asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
-            inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
+            inflation_factor2 = 1.+covinflate1*(fsprd-asprd)/asprd
         else:
             # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
             # model, linear gaussian scenario)
             # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
             inc = xensmean_a - xensmean_b
-            inflation_factor = covinflate1*asprd + \
+            inflation_factor2 = covinflate1*asprd + \
             (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
-            inflation_factor = np.sqrt(inflation_factor/asprd)
-        xprime = xprime*inflation_factor
+            inflation_factor2 = np.sqrt(inflation_factor2/asprd)
+        xprime = xprime*inflation_factor2
         xens = xprime + xensmean_a
 
         # back to 3d state vector
@@ -637,7 +637,6 @@ for ntime in range(nassim):
         uens_inc = np.empty((assim_timesteps,nanals,2,model.ft.Nt,model.ft.Nt),model.ft.dtype)
         vens_inc = np.empty((assim_timesteps,nanals,2,model.ft.Nt,model.ft.Nt),model.ft.dtype)
         dzens_inc = np.empty((assim_timesteps,nanals,2,model.ft.Nt,model.ft.Nt),model.ft.dtype)
-        assim_timesteps//2 = assim_timesteps//2
         for n in range(assim_timesteps//2):
             wt2 = float(n)/float(assim_timesteps//2)
             wt1 = 1.-wt2
