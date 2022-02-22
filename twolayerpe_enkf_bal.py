@@ -63,7 +63,7 @@ diff_efold = None # use diffusion from climo file
 profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
-baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
+baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 if ivar == 0:
     nlevs_update = 4
@@ -75,7 +75,7 @@ posterior_stats = False
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 300 # assimilation times to run
+nassim = 800 # assimilation times to run
 
 nanals = 20 # ensemble members
 
@@ -330,7 +330,7 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,divguess=False,relax=0.015,eps=1.e-2,verbose=False):
+def balens(model,uens,vens,dzens,baldiv=True,nitermax=1000,divguess=True,relax=0.015,eps=1.e-2,verbose=False):
     if not baldiv:
         # balanced div assumed zero
         divguess=None
@@ -339,6 +339,7 @@ def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,divguess=False,relax=0
     vens_bal = np.empty(uens.shape, uens.dtype)
     dzens_bal = np.empty(uens.shape, uens.dtype)
     for nmem in range(nanals):
+        if verbose: print('ens member ',nmem)
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
         vrt = model.ft.spectogrd(vrtspec)
         if divguess==True:
@@ -350,8 +351,8 @@ def balens(model,uens,vens,dzens,baldiv=True,nitermax=500,divguess=False,relax=0
         dz1mean = dzens[nmem,...][0].mean()
         dz2mean = dzens[nmem,...][1].mean()
         dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
-                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-        if div==False:
+                        adiab=False,nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+        if divguess is None:
             # no balanced divergence (much faster)
             divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         else:

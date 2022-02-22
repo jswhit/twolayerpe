@@ -64,7 +64,7 @@ posterior_stats = False
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 300 # assimilation times to run
+nassim = 800 # assimilation times to run
 
 nanals = 20 # ensemble members
 

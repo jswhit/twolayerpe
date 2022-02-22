@@ -63,7 +63,7 @@ diff_efold = None # use diffusion from climo file
 profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
-baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
+baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
 ivar = 0 # 0 for u,v update, 1 for pv
 if ivar == 0:
     nlevs_update = 4
@@ -75,9 +75,8 @@ posterior_stats = False
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 300 # assimilation times to run
-
 nanals = 20 # ensemble members
+nassim = 800 # assimilation times to run
 
 oberrstdev_zmid = 100.  # interface height ob error in meters
 #oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
@@ -515,6 +514,8 @@ for ntime in range(nassim):
             inflation_factor = covinflate1*asprd + \
             (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
             inflation_factor = np.sqrt(inflation_factor/asprd)
+        # make sure inflation not less than 1
+        #inflation_factor = np.where(inflation_factor < 1, 1, inflation_factor)
         xprime = xprime*inflation_factor
         xens = xprime + xensmean_a
 
@@ -560,6 +561,8 @@ for ntime in range(nassim):
                 inflation_factoru = covinflate1*asprd + \
                 (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
                 inflation_factoru = np.sqrt(inflation_factoru/asprd)
+            # make sure inflation not less than 1
+            #inflation_factor = np.where(inflation_factor < 1, 1, inflation_factor)
             xprime = xprime*inflation_factoru
             xens = xprime + xensmean_a
 
