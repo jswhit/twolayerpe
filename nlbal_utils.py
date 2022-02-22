@@ -2,7 +2,7 @@
 # vorticity and continuity equations)
 import numpy as np
 
-def getbal(model,vrt,div=None,adiab=False,dz1mean=None,dz2mean=None,nitermax=500,relax=0.015,eps=1.e-2,verbose=False):
+def getbal(model,vrt,div=None,adiab=False,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.015,eps=1.e-2,verbose=False):
     """computes balanced layer thickness and divergence given vorticity."""
  
     if dz1mean is None: 
@@ -110,7 +110,7 @@ def getbal(model,vrt,div=None,adiab=False,dz1mean=None,dz2mean=None,nitermax=500
 
     return dz,div
 
-def pvinvert(model,pv,dzin=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.15,eps=1.e-4,nodiv=False,adiab=False,verbose=False):
+def pvinvert(model,pv,dzin=None,dz1mean=None,dz2mean=None,nitermax=1000,relax=0.015,eps=1.e-4,nodiv=False,adiab=False,verbose=False):
     """computes balanced layer thickness and streamfunction given potential vorticity."""
 
     if dz1mean is None:
