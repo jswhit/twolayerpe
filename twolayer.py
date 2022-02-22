@@ -203,11 +203,18 @@ def run_model_iau(u,v,dz,uinc,vinc,dzinc,wts,N,L,dt,timesteps,theta1=300,theta2=
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
     vrtspec, divspec = ft.getvrtdivspec(u,v)
-    fvrtspec, fdivspec = ft.getvrtdivspec(uinc,vinc)
     dzspec = ft.grdtospec(dz)
-    fdzspec = ft.grdtospec(dzinc)
-    for n in range(timesteps):
-        vrtspec, divspec, dzspec = model.rk4step_iau(vrtspec,divspec,dzspec,wts[n]*fvrtspec,wts[n]*fdivspec,wts[n]*fdzspec)
+    if len(uinc.shape) == 3: # 3diau
+        fvrtspec, fdivspec = ft.getvrtdivspec(uinc,vinc)
+        fdzspec = ft.grdtospec(dzinc)
+        for n in range(timesteps):
+            vrtspec, divspec, dzspec = model.rk4step_iau(vrtspec,divspec,dzspec,wts[n]*fvrtspec,wts[n]*fdivspec,wts[n]*fdzspec)
+    else: # 4diau (increments already interpolated to timestep)
+        for n in range(timesteps):
+            fvrtspec, fdivspec = ft.getvrtdivspec(uinc[n],vinc[n])
+            fdzspec = ft.grdtospec(dzinc[n])
+            vrtspec, divspec, dzspec = model.rk4step_iau(vrtspec,divspec,dzspec,wts[n]*fvrtspec,wts[n]*fdivspec,wts[n]*fdzspec)
+        
     u, v = ft.getuv(vrtspec,divspec)
     dz = ft.spectogrd(dzspec)
     return u,v,dz,model.masstendvar

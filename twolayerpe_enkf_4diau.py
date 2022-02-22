@@ -436,15 +436,17 @@ for ntime in range(nassim):
 
     # compute forward operator.
     # hxens is ensemble in observation space.
-    hxens = gethofx(uens,vens,ztop-dzens[:,1,...],indxob,nanals,nobs)
+    if ntime == 0:
+        uens_mid=uens; vens_mid=vens; dzens_mid=dzens
+    hxens = gethofx(uens_mid,vens_mid,ztop-dzens_mid[:,1,...],indxob,nanals,nobs)
 
     if savedata is not None:
         u_t[ntime] = u_truth[ntime+ntstart]
-        u_b[ntime,:,:,:] = uens
+        u_b[ntime,:,:,:] = uens_mid
         v_t[ntime] = v_truth[ntime+ntstart]
-        v_b[ntime,:,:,:] = vens
+        v_b[ntime,:,:,:] = vens_mid
         dz_t[ntime] = dz_truth[ntime+ntstart]
-        dz_b[ntime,:,:,:] = dzens
+        dz_b[ntime,:,:,:] = dzens_mid
         obsu1[ntime] = obs[0:nobs]
         obsv1[ntime] = obs[nobs:2*nobs]
         obsu2[ntime] = obs[2*nobs:3*nobs]
@@ -453,24 +455,16 @@ for ntime in range(nassim):
         x_obs[ntime] = xob
         y_obs[ntime] = yob
 
-    # EnKF update
+    # EnKF update (beg of window)
     # create state vector.
-    uens_b = uens.copy(); vens_b = vens.copy(); dzens_b=dzens.copy()
-    xens = enstoctl(model,uens,vens,dzens,ivar=ivar)
-    xensmean_b = xens.mean(axis=0)
-    xprime = xens-xensmean_b
-    fsprd = (xprime**2).sum(axis=0)/(nanals-1)
+    if ntime != 0:
+        uens_b = uens_beg.copy(); vens_b = vens_beg.copy(); dzens_b=dzens_beg.copy()
+        xens = enstoctl(model,uens_beg,vens_beg,dzens_beg,ivar=ivar)
+        xensmean_b = xens.mean(axis=0)
+        xprime = xens-xensmean_b
+        fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
-    # prior stats.
-    vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens,vens,dzens,\
-    u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-    print("%s %g %g %g %g %g %g %g %g %g %g" %\
-    (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag))
-
-    # update state vector with serial filter or letkf.
-    if not debug_model: 
+        # update state vector with serial filter or letkf.
         if use_letkf:
             xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
         else:
@@ -497,11 +491,63 @@ for ntime in range(nassim):
         xprime = xprime*inflation_factor
         xens = xprime + xensmean_a
 
+        # back to 3d state vector
+        uens_a,vens_a,dzens_a = ctltoens(model,xens,ivar=ivar)
+        uens_inc_beg = (uens_a-uens_b).copy()
+        vens_inc_beg = (vens_a-vens_b).copy()
+        dzens_inc_beg = (dzens_a-dzens_b).copy()
+
+    # EnKF update (mid of window)
+    # create state vector.
+    uens_b = uens_mid.copy(); vens_b = vens_mid.copy(); dzens_b=dzens_mid.copy()
+    xens = enstoctl(model,uens_mid,vens_mid,dzens_mid,ivar=ivar)
+    xensmean_b = xens.mean(axis=0)
+    xprime = xens-xensmean_b
+    fsprd = (xprime**2).sum(axis=0)/(nanals-1)
+
+    # prior stats.
+    vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
+    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens,vens,dzens,\
+    u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
+    print("%s %g %g %g %g %g %g %g %g %g %g" %\
+    (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
+     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag))
+
+    # update state vector with serial filter or letkf.
+    if use_letkf:
+        xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
+    else:
+        xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
+    t2 = time.time()
+    if profile: print('cpu time for EnKF update',t2-t1)
+
+    # posterior multiplicative inflation.
+    xensmean_a = xens.mean(axis=0)
+    xprime = xens-xensmean_a
+    asprd = (xprime**2).sum(axis=0)/(nanals-1)
+    if covinflate2 < 0:
+        # relaxation to prior stdev (Whitaker & Hamill 2012)
+        asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
+        inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
+    else:
+        # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
+        # model, linear gaussian scenario)
+        # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
+        inc = xensmean_a - xensmean_b
+        inflation_factor = covinflate1*asprd + \
+        (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
+        inflation_factor = np.sqrt(inflation_factor/asprd)
+    xprime = xprime*inflation_factor
+    xens = xprime + xensmean_a
+
     # back to 3d state vector
     uens_a,vens_a,dzens_a = ctltoens(model,xens,ivar=ivar)
-    uens_inc = uens_a-uens_b
-    vens_inc = vens_a-vens_b
-    dzens_inc = dzens_a-dzens_b
+    uens_inc_mid = (uens_a-uens_b).copy()
+    vens_inc_mid = (vens_a-vens_b).copy()
+    dzens_inc_mid = (dzens_a-dzens_b).copy()
+    uens_mid_a = uens_a.copy()
+    vens_mid_a = vens_a.copy()
+    dzens_mid_a = dzens_a.copy()
 
     # posterior stats
     if posterior_stats:
@@ -512,43 +558,112 @@ for ntime in range(nassim):
         (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
          zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a))
 
+    # EnKF update (end of window)
+    # create state vector.
+    if ntime != 0:
+        uens_b = uens_end.copy(); vens_b = vens_end.copy(); dzens_b=dzens_end.copy()
+        xens = enstoctl(model,uens_end,vens_end,dzens_end,ivar=ivar)
+        xensmean_b = xens.mean(axis=0)
+        xprime = xens-xensmean_b
+        fsprd = (xprime**2).sum(axis=0)/(nanals-1)
+
+        # update state vector with serial filter or letkf.
+        if use_letkf:
+            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
+        else:
+            xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
+        t2 = time.time()
+        if profile: print('cpu time for EnKF update',t2-t1)
+
+        # posterior multiplicative inflation.
+        xensmean_a = xens.mean(axis=0)
+        xprime = xens-xensmean_a
+        asprd = (xprime**2).sum(axis=0)/(nanals-1)
+        if covinflate2 < 0:
+            # relaxation to prior stdev (Whitaker & Hamill 2012)
+            asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
+            inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
+        else:
+            # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
+            # model, linear gaussian scenario)
+            # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
+            inc = xensmean_a - xensmean_b
+            inflation_factor = covinflate1*asprd + \
+            (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
+            inflation_factor = np.sqrt(inflation_factor/asprd)
+        xprime = xprime*inflation_factor
+        xens = xprime + xensmean_a
+
+        # back to 3d state vector
+        uens_a,vens_a,dzens_a = ctltoens(model,xens,ivar=ivar)
+        uens_inc_end = (uens_a-uens_b).copy()
+        vens_inc_end = (vens_a-vens_b).copy()
+        dzens_inc_end = (dzens_a-dzens_b).copy()
+
     # save data.
     if savedata is not None:
-        u_a[ntime,:,:,:] = uens_a
-        v_a[ntime,:,:,:] = vens_a
-        dz_a[ntime,:,:,:] = dzens_a
+        u_a[ntime,:,:,:] = uens_mid_a
+        v_a[ntime,:,:,:] = vens_mid_a
+        dz_a[ntime,:,:,:] = dzens_mid_a
         tvar[ntime] = obtimes[ntime+ntstart]
         nc.sync()
 
     # run forecast ensemble to next analysis time
     if ntime == 0 or not use_iau:
-        uens = uens_a; vens = vens_a; dzens = dzens_a
+        uens = uens_mid_a; vens = vens_mid_a; dzens = dzens_mid_a
         t1 = time.time()
         tstart = model.t
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
-        uens_save=uens.copy(); vens_save=vens.copy(); dzens_save=dzens.copy()
+        uens_beg=uens.copy(); vens_beg=vens.copy(); dzens_beg=dzens.copy()
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         masstend_diag=0.
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
             masstend_diag+=mtend/nanals
         model.t = tstart + dt*assim_timesteps
+        uens_mid=uens.copy(); vens_mid=vens.copy(); dzens_mid=dzens.copy()
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        for nanal in range(nanals):
+            uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+        model.t = tstart + dt*assim_timesteps
+        uens_end=uens.copy(); vens_end=vens.copy(); dzens_end=dzens.copy()
         t2 = time.time()
         if profile: print('cpu time for ens forecast',t2-t1)
     else:
         # initialize from end of previous IAU window, run across IAU window with forcing
         tstart = model.t
-        results = Parallel(n_jobs=n_jobs)(delayed(run_model_iau)(uens_save[nanal],vens_save[nanal],dzens_save[nanal],uens_inc[nanal],vens_inc[nanal],dzens_inc[nanal],wts_iau,N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        uens_inc = np.empty((assim_timesteps,nanals,2,model.ft.Nt,model.ft.Nt),model.ft.dtype)
+        vens_inc = np.empty((assim_timesteps,nanals,2,model.ft.Nt,model.ft.Nt),model.ft.dtype)
+        dzens_inc = np.empty((assim_timesteps,nanals,2,model.ft.Nt,model.ft.Nt),model.ft.dtype)
+        nsteps = assim_timesteps//2
+        for n in range(nsteps):
+            wt2 = float(n)/float(nsteps)
+            wt1 = 1.-wt2
+            uens_inc[n] = wt1*uens_inc_beg + wt2*uens_inc_mid
+            vens_inc[n] = wt1*vens_inc_beg + wt2*vens_inc_mid
+            dzens_inc[n] = wt1*dzens_inc_beg + wt2*dzens_inc_mid
+        for n in range(nsteps):
+            wt2 = float(n)/float(nsteps)
+            wt1 = 1.-wt2
+            uens_inc[nsteps+n] = wt1*uens_inc_mid + wt2*uens_inc_end
+            vens_inc[nsteps+n] = wt1*vens_inc_mid + wt2*vens_inc_end
+            dzens_inc[nsteps+n] = wt1*dzens_inc_mid + wt2*dzens_inc_end
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model_iau)(uens_beg[nanal],vens_beg[nanal],dzens_beg[nanal],uens_inc[:,nanal,...],vens_inc[:,nanal,...],dzens_inc[:,nanal,...],wts_iau,N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
-        uens_save=uens.copy(); vens_save=vens.copy(); dzens_save=dzens.copy()
+        uens_beg=uens.copy(); vens_beg=vens.copy(); dzens_beg=dzens.copy()
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         masstend_diag=0.
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
             masstend_diag+=mtend/nanals
+        uens_mid=uens.copy(); vens_mid=vens.copy(); dzens_mid=dzens.copy()
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens_mid[nanal],vens_mid[nanal],dzens_mid[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        for nanal in range(nanals):
+            uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+        uens_end=uens.copy(); vens_end=vens.copy(); dzens_end=dzens.copy()
         model.t = tstart + dt*assim_timesteps
         t2 = time.time()
         if profile: print('cpu time for ens forecast',t2-t1)
