@@ -359,6 +359,30 @@ def balens(model,uens,vens,dzens,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,
         dzens_bal[nmem] = dzbal
     return uens_bal,vens_bal,dzens_bal
 
+def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
+           theta1=300,theta2=330,f=1.e-4,\
+           zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=0):
+    ft = Fouriert(N,L,threads=1)
+    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,\
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
+    vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
+    vrt = ft.spectogrd(vrtspec)
+    pv = (vrt + model.f)/dzmem
+    dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dzmem,nodiv=nodiv,\
+                            nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+    #dz1mean = dzmem[0,...].mean()
+    #dz2mean = dzmem[1,...].mean()
+    #dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=None,dz1mean=dz1mean,dz2mean=dz2mean,nodiv=nodiv,\
+    #                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+    vrtspec = ft.grdtospec(vrtbal)
+    if nodiv:
+        # no balanced divergence.
+        divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+    else:
+        divspec = ft.grdtospec(divbal)
+    ubal, vbal = ft.getuv(vrtspec,divspec)
+    return ubal,vbal,dzbal
+
 def enstoctl(model,uens,vens,dzens,ivar=0):
     xens = np.empty((nanals,6,Nt**2),dtype)
     if ivar==0:
@@ -452,7 +476,14 @@ for ntime in range(nassim):
     # update balanced and unbalanced parts separately
     # (assuming no cross-covariance)
     # impose balance constraint on balanced part of ens after the update
-    uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,nodiv=nodiv)
+    if n_jobs == 0:
+        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,nodiv=nodiv)
+    else:
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],nodiv=nodiv,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
+        dzens_bal = np.empty(dzens.shape, dzens.dtype)
+        for nanal in range(nanals):
+            uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
     uens_unbal = uens-uens_bal
     vens_unbal = vens-vens_bal
     dzens_unbal = dzens-dzens_bal
@@ -523,7 +554,12 @@ for ntime in range(nassim):
     # balance 'balanced' analysis ensemble for u,v,dz control vector
     # (done inside ctltoens for pv control vector)
     if ivar==0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,nodiv=nodiv)
+        if n_jobs == 0:
+            uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,nodiv=nodiv)
+        else:
+            results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],nodiv=nodiv,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+            for nanal in range(nanals):
+                uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
 
     if hcovlocal_scale_unbal > 1001: # otherwise don't update unbalanced part.
         # EnKF update for unbalanced part.
