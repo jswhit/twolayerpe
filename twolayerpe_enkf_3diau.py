@@ -201,7 +201,8 @@ model.timesteps = assim_timesteps
 
 # constant IAU weights
 use_iau = True
-iau_filter_weights = False
+fix_totmass = True
+iau_filter_weights = True
 wts_iau = np.ones(2*nsteps_iau,np.float32)/assim_interval
 if iau_filter_weights:
     # Lanczos IAU weights
@@ -465,9 +466,10 @@ for ntime in range(nassim):
     vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
     zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens_b,vens_b,dzens_b,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-    print("%s %g %g %g %g %g %g %g %g %g %g" %\
+    totmass = ((dzens_b[:,0,...]+dzens_b[:,1,...]).mean(axis=0)).mean()/1000.
+    print("%s %g %g %g %g %g %g %g %g %g %g %g" %\
     (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag))
+     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag,totmass))
 
     # update state vector with serial filter or letkf.
     if not debug_model: 
@@ -502,6 +504,10 @@ for ntime in range(nassim):
     uens_inc = uens_a-uens_b
     vens_inc = vens_a-vens_b
     dzens_inc = dzens_a-dzens_b
+    if fix_totmass:
+        for nmem in range(nanals):
+            dzens_inc[nmem][0] -= dzens_inc[nmem][0].mean()
+            dzens_inc[nmem][1] -= dzens_inc[nmem][1].mean()
 
     # posterior stats
     if posterior_stats:
@@ -528,12 +534,20 @@ for ntime in range(nassim):
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+                dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
         uens_save=uens.copy(); vens_save=vens.copy(); dzens_save=dzens.copy()
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         masstend_diag=0.
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
             masstend_diag+=mtend/nanals
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+                dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
         model.t = tstart + dt*assim_timesteps
         t2 = time.time()
         if profile: print('cpu time for ens forecast',t2-t1)

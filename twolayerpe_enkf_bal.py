@@ -63,7 +63,8 @@ diff_efold = None # use diffusion from climo file
 profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
-baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
+fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
+baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 if ivar == 0:
     nlevs_update = 4
@@ -491,9 +492,10 @@ for ntime in range(nassim):
     vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
     zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens,vens,dzens,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-    print("%s %g %g %g %g %g %g %g %g %g %g" %\
+    totmass = ((dzens[:,0,...]+dzens[:,1,...]).mean(axis=0)).mean()/1000.
+    print("%s %g %g %g %g %g %g %g %g %g %g %g" %\
     (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag))
+     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag,totmass))
 
     # EnKF update for balanced part.
     xens = enstoctl(model,uens_bal,vens_bal,dzens_bal,ivar=ivar)
@@ -589,6 +591,11 @@ for ntime in range(nassim):
         uens = uens_bal + uens_unbal
         vens = vens_bal + vens_unbal
         dzens = dzens_bal + dzens_unbal
+
+    if fix_totmass: # not needed
+        for nmem in range(nanals):
+            dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+            dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
 
     # posterior stats
     if posterior_stats:

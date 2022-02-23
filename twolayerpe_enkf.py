@@ -57,6 +57,7 @@ diff_efold = None # use diffusion from climo file
 profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
+fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
@@ -342,7 +343,7 @@ def enstoctl(model,uens,vens,dzens,ivar=0):
     xens[:,4:6,:] = dzens[:].reshape(nanals,2,model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens,ivar=0):
+def ctltoens(model,xens,ivar=0,fix_totmass=False):
     uens = np.empty((nanals,2,Nt,Nt),dtype)
     vens = np.empty((nanals,2,Nt,Nt),dtype)
     dzens = np.empty((nanals,2,Nt,Nt),dtype)
@@ -363,6 +364,10 @@ def ctltoens(model,xens,ivar=0):
             vrtspec = model.ft.lap*psispec;  divspec = model.ft.lap*chispec
             uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
     dzens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    if fix_totmass:
+        for nmem in range(nanals):
+            dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+            dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
     return uens,vens,dzens
 
 masstend_diag = 0.
@@ -442,9 +447,10 @@ for ntime in range(nassim):
     vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
     zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens,vens,dzens,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-    print("%s %g %g %g %g %g %g %g %g %g %g" %\
+    totmass = ((dzens[:,0,...]+dzens[:,1,...]).mean(axis=0)).mean()/1000.
+    print("%s %g %g %g %g %g %g %g %g %g %g %g" %\
     (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag))
+     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag,totmass))
 
     # update state vector with serial filter or letkf.
     if not debug_model: 
@@ -475,7 +481,7 @@ for ntime in range(nassim):
         xens = xprime + xensmean_a
 
     # back to 3d state vector
-    uens,vens,dzens = ctltoens(model,xens,ivar=ivar)
+    uens,vens,dzens = ctltoens(model,xens,ivar=ivar,fix_totmass=fix_totmass)
 
     # posterior stats
     if posterior_stats:

@@ -201,7 +201,8 @@ model.timesteps = assim_timesteps
 
 # constant IAU weights
 use_iau = True
-iau_filter_weights = False
+fix_totmass = True
+iau_filter_weights = False # use Lanczos weights instead of constant
 wts_iau = np.ones(2*nsteps_iau,np.float32)/assim_interval
 if iau_filter_weights:
     # Lanczos IAU weights
@@ -496,6 +497,10 @@ for ntime in range(nassim):
         uens_inc_beg = (uens_a-uens_b).copy()
         vens_inc_beg = (vens_a-vens_b).copy()
         dzens_inc_beg = (dzens_a-dzens_b).copy()
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens_inc_beg[nmem][0] -= dzens_inc_beg[nmem][0].mean()
+                dzens_inc_beg[nmem][1] -= dzens_inc_beg[nmem][1].mean()
 
     # EnKF update (mid of window)
     # create state vector.
@@ -509,9 +514,10 @@ for ntime in range(nassim):
     vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
     zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens_b,vens_b,dzens_b,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-    print("%s %g %g %g %g %g %g %g %g %g %g" %\
+    totmass = ((dzens_b[:,0,...]+dzens_b[:,1,...]).mean(axis=0)).mean()/1000.
+    print("%s %g %g %g %g %g %g %g %g %g %g %g" %\
     (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag))
+     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag,totmass))
 
     # update state vector with serial filter or letkf.
     if use_letkf:
@@ -545,6 +551,10 @@ for ntime in range(nassim):
     uens_inc_mid = (uens_a-uens_b).copy()
     vens_inc_mid = (vens_a-vens_b).copy()
     dzens_inc_mid = (dzens_a-dzens_b).copy()
+    if fix_totmass:
+        for nmem in range(nanals):
+            dzens_inc_mid[nmem][0] -= dzens_inc_mid[nmem][0].mean()
+            dzens_inc_mid[nmem][1] -= dzens_inc_mid[nmem][1].mean()
     uens_mid_a = uens_a.copy()
     vens_mid_a = vens_a.copy()
     dzens_mid_a = dzens_a.copy()
@@ -599,6 +609,10 @@ for ntime in range(nassim):
         uens_inc_end = (uens_a-uens_b).copy()
         vens_inc_end = (vens_a-vens_b).copy()
         dzens_inc_end = (dzens_a-dzens_b).copy()
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens_inc_end[nmem][0] -= dzens_inc_end[nmem][0].mean()
+                dzens_inc_end[nmem][1] -= dzens_inc_end[nmem][1].mean()
 
     # save data.
     if savedata is not None:
@@ -616,17 +630,29 @@ for ntime in range(nassim):
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+                dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
         uens_beg=uens.copy(); vens_beg=vens.copy(); dzens_beg=dzens.copy()
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         masstend_diag=0.
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
             masstend_diag+=mtend/nanals
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+                dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
         model.t = tstart + dt*assim_timesteps
         uens_mid=uens.copy(); vens_mid=vens.copy(); dzens_mid=dzens.copy()
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+                dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
         model.t = tstart + dt*assim_timesteps
         uens_end=uens.copy(); vens_end=vens.copy(); dzens_end=dzens.copy()
         t2 = time.time()
