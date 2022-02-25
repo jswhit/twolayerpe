@@ -3,7 +3,7 @@ from netCDF4 import Dataset
 import sys, time, os
 from twolayer import TwoLayer, run_model, run_model_iau
 from pyfft import Fouriert
-from enkf_utils import cartdist,letkf_update,serial_update,gaspcohn
+from enkf_utils import cartdist,letkfwts_compute,serial_update,gaspcohn
 from joblib import Parallel, delayed
 
 # EnKF cycling for two-layer pe turbulence model with interface height obs.
@@ -56,9 +56,8 @@ diff_efold = None # use diffusion from climo file
 
 profile = False # turn on profiling?
 
-use_letkf = True # if False, use serial EnSRF
-ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 read_restart = False
+
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
 precision = 'float32'
@@ -75,7 +74,8 @@ oberrstdev_wind = 1.e30 # don't assimilate winds
 # nature run created using twolayer_naturerun.py.
 filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model climo
 # perfect model
-filename_truth = filename_climo
+#filename_truth = filename_climo
+filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 
 print('# filename_modelclimo=%s' % filename_climo)
 print('# filename_truth=%s' % filename_truth)
@@ -153,8 +153,8 @@ if not read_restart:
 else:
     ncinit.close()
 
-print("# hcovlocal=%g use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
-     (hcovlocal_scale/1000.,use_letkf,covinflate1,covinflate2,nanals))
+print("# hcovlocal=%g covinf1=%s covinf2=%s nanals=%s" %\
+     (hcovlocal_scale/1000.,covinflate1,covinflate2,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
@@ -177,10 +177,6 @@ obs = np.empty(5*nobs,dtype)
 covlocal1 = np.empty(Nt**2,dtype)
 covlocal1_tmp = np.empty((nobs,Nt**2),dtype)
 covlocal_tmp = np.empty((5*nobs,Nt**2),dtype)
-if not use_letkf:
-    obcovlocal1 = np.empty((nobs,nobs),dtype)
-else:
-    obcovlocal = None
 
 obtimes = nc_truth.variables['t'][:]
 if read_restart:
@@ -343,52 +339,19 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def enstoctl(model,uens,vens,dzens,ivar=0):
+def enstoctl(model,uens,vens,dzens):
     xens = np.empty((nanals,6,Nt**2),dtype)
-    if ivar==0:
-        # update u,v
-        xens[:,0:2,:] = uens[:].reshape(nanals,2,model.ft.Nt**2)
-        xens[:,2:4,:] = vens[:].reshape(nanals,2,model.ft.Nt**2)
-    elif ivar==1:
-        # update vort,div
-        for nmem in range(nanals):
-            vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
-            vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
-            xens[nmem,0:2,:] = vrt[:].reshape(2,model.ft.Nt**2)
-            xens[nmem,2:4,:] = div[:].reshape(2,model.ft.Nt**2)
-    elif ivar==2:
-        # update psi,chi
-        for nmem in range(nanals):
-            vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
-            psispec = model.ft.invlap*vrtspec; chispec = model.ft.invlap*psispec
-            psi = model.ft.spectogrd(psispec); chi = model.ft.spectogrd(psispec)
-            xens[nmem,0:2,:] = psi.reshape(2,model.ft.Nt**2)
-            xens[nmem,2:4,:] = chi.reshape(2,model.ft.Nt**2)
-    else: 
-        raise ValueError('ivar myst be 0,1,or 2')
+    xens[:,0:2,:] = uens[:].reshape(nanals,2,model.ft.Nt**2)
+    xens[:,2:4,:] = vens[:].reshape(nanals,2,model.ft.Nt**2)
     xens[:,4:6,:] = dzens[:].reshape(nanals,2,model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens,ivar=0):
+def ctltoens(model,xens):
     uens = np.empty((nanals,2,Nt,Nt),dtype)
     vens = np.empty((nanals,2,Nt,Nt),dtype)
     dzens = np.empty((nanals,2,Nt,Nt),dtype)
-    if ivar == 0:
-        uens[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-        vens[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    elif ivar == 1:
-        for nmem in range(nanals):
-            vrt = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            div = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            vrtspec = model.ft.grdtospec(vrt); divspec = model.ft.grdtospec(div)
-            uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
-    elif ivar == 2:
-        for nmem in range(nanals):
-            psi = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            chi = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            psispec = model.ft.grdtospec(psi); chispec = model.ft.grdtospec(chi)
-            vrtspec = model.ft.lap*psispec;  divspec = model.ft.lap*chispec
-            uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
+    uens[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    vens[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     dzens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     return uens,vens,dzens
 
@@ -423,21 +386,10 @@ for ntime in range(nassim):
         covlocal1 = gaspcohn(dist/hcovlocal_scale)
         covlocal1_tmp[nob] = covlocal1.ravel()
         dist = cartdist(xob[nob],yob[nob],xob,yob,nc_climo.L,nc_climo.L)
-        if not use_letkf: obcovlocal1[nob] = gaspcohn(dist/hcovlocal_scale)
     covlocal_tmp[nobs:2*nobs,:] = covlocal1_tmp
     covlocal_tmp[2*nobs:3*nobs,:] = covlocal1_tmp
     covlocal_tmp[3*nobs:4*nobs,:] = covlocal1_tmp
     covlocal_tmp[4*nobs:,:] = covlocal1_tmp
-    if not use_letkf:
-        obcovlocal = np.block(
-            [
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1]
-            ]
-        )
 
     # compute forward operator.
     # hxens is ensemble in observation space.
@@ -460,20 +412,22 @@ for ntime in range(nassim):
         x_obs[ntime] = xob
         y_obs[ntime] = yob
 
+    # calculate LETKF weights
+    wts = letkfwts_compute(hxens,obs,oberrvar,covlocal_tmp,n_jobs)
+
     # EnKF update (beg of window)
     # create state vector.
     if ntime != 0:
         uens_b = uens_beg.copy(); vens_b = vens_beg.copy(); dzens_b=dzens_beg.copy()
-        xens = enstoctl(model,uens_beg,vens_beg,dzens_beg,ivar=ivar)
+        xens = enstoctl(model,uens_beg,vens_beg,dzens_beg)
         xensmean_b = xens.mean(axis=0)
         xprime = xens-xensmean_b
         fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
-        # update state vector with serial filter or letkf.
-        if use_letkf:
-            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
-        else:
-            xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
+        # update state vector using letkf weights
+        for k in range(xens.shape[1]):
+            for n in range(model.ft.Nt**2):
+                xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
         t2 = time.time()
         if profile: print('cpu time for EnKF update',t2-t1)
 
@@ -497,7 +451,7 @@ for ntime in range(nassim):
         xens = xprime + xensmean_a
 
         # back to 3d state vector
-        uens_a,vens_a,dzens_a = ctltoens(model,xens,ivar=ivar)
+        uens_a,vens_a,dzens_a = ctltoens(model,xens)
         uens_inc_beg = (uens_a-uens_b).copy()
         vens_inc_beg = (vens_a-vens_b).copy()
         dzens_inc_beg = (dzens_a-dzens_b).copy()
@@ -509,7 +463,7 @@ for ntime in range(nassim):
     # EnKF update (mid of window)
     # create state vector.
     uens_b = uens_mid.copy(); vens_b = vens_mid.copy(); dzens_b=dzens_mid.copy()
-    xens = enstoctl(model,uens_mid,vens_mid,dzens_mid,ivar=ivar)
+    xens = enstoctl(model,uens_mid,vens_mid,dzens_mid)
     xensmean_b = xens.mean(axis=0)
     xprime = xens-xensmean_b
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
@@ -523,11 +477,10 @@ for ntime in range(nassim):
     (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
      zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,ke_errav,ke_sprdav,inflation_factor.mean(),masstend_diag,totmass))
 
-    # update state vector with serial filter or letkf.
-    if use_letkf:
-        xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
-    else:
-        xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
+    # update state vector using letkf weights
+    for k in range(xens.shape[1]):
+        for n in range(model.ft.Nt**2):
+            xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
     t2 = time.time()
     if profile: print('cpu time for EnKF update',t2-t1)
 
@@ -551,7 +504,7 @@ for ntime in range(nassim):
     xens = xprime + xensmean_a
 
     # back to 3d state vector
-    uens_a,vens_a,dzens_a = ctltoens(model,xens,ivar=ivar)
+    uens_a,vens_a,dzens_a = ctltoens(model,xens)
     uens_inc_mid = (uens_a-uens_b).copy()
     vens_inc_mid = (vens_a-vens_b).copy()
     dzens_inc_mid = (dzens_a-dzens_b).copy()
@@ -576,16 +529,15 @@ for ntime in range(nassim):
     # create state vector.
     if ntime != 0:
         uens_b = uens_end.copy(); vens_b = vens_end.copy(); dzens_b=dzens_end.copy()
-        xens = enstoctl(model,uens_end,vens_end,dzens_end,ivar=ivar)
+        xens = enstoctl(model,uens_end,vens_end,dzens_end)
         xensmean_b = xens.mean(axis=0)
         xprime = xens-xensmean_b
         fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
-        # update state vector with serial filter or letkf.
-        if use_letkf:
-            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
-        else:
-            xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
+        # update state vector using letkf weights
+        for k in range(xens.shape[1]):
+            for n in range(model.ft.Nt**2):
+                xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
         t2 = time.time()
         if profile: print('cpu time for EnKF update',t2-t1)
 
@@ -609,7 +561,7 @@ for ntime in range(nassim):
         xens = xprime + xensmean_a
 
         # back to 3d state vector
-        uens_a,vens_a,dzens_a = ctltoens(model,xens,ivar=ivar)
+        uens_a,vens_a,dzens_a = ctltoens(model,xens)
         uens_inc_end = (uens_a-uens_b).copy()
         vens_inc_end = (vens_a-vens_b).copy()
         dzens_inc_end = (dzens_a-dzens_b).copy()
