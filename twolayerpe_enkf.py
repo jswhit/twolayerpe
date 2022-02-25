@@ -193,7 +193,7 @@ else:
 assim_interval = obtimes[1]-obtimes[0]
 assim_timesteps = int(np.round(assim_interval/model.dt))
 print('# assim_interval = %s assim_timesteps = %s' % (assim_interval,assim_timesteps))
-print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,masstend_diag')
+print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,KEerr,KEsprd,inflation,masstend_diag,totdz')
 
 # initialize model clock
 model.t = obtimes[ntstart]
@@ -280,6 +280,8 @@ def getspreaderr(uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     verr = ((vensmean-v_truth))**2
     vprime = vens-vensmean
     vsprd = (vprime**2).sum(axis=0)/(nanals-1)
+    ke_err = uerr+verr
+    ke_sprd = usprd+vsprd
     vecwind_err = np.sqrt(uerr+verr)
     vecwind_sprd = np.sqrt(usprd+vsprd)
     zsfc = ztop - dzens.sum(axis=1)
@@ -294,6 +296,8 @@ def getspreaderr(uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     zmiderr = (zmidensmean-zmid_truth)**2
     zmidprime = zmid-zmidensmean
     zmidsprd = (zmidprime**2).sum(axis=0)/(nanals-1)
+    ke_errav = np.sqrt(ke_err.mean())
+    ke_sprdav = np.sqrt(ke_sprd.mean())
     vecwind1_errav = vecwind_err[0,...].mean()
     vecwind2_errav = vecwind_err[1,...].mean()
     vecwind1_sprdav = vecwind_sprd[0,...].mean()
@@ -304,7 +308,7 @@ def getspreaderr(uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     zmid_sprdav = np.sqrt(zmidsprd.mean())
     zsfc_errav = np.sqrt(zsfcerr.mean())
     zsfc_sprdav = np.sqrt(zsfcsprd.mean())
-    return vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav
+    return vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,ke_errav,ke_sprdav
 
 # forward operator, ob space stats
 def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
@@ -445,12 +449,12 @@ for ntime in range(nassim):
 
     # prior stats.
     vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b=getspreaderr(uens,vens,dzens,\
+    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b,ke_errav,ke_sprdav=getspreaderr(uens,vens,dzens,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
     totmass = ((dzens[:,0,...]+dzens[:,1,...]).mean(axis=0)).mean()/1000.
-    print("%s %g %g %g %g %g %g %g %g %g %g %g" %\
+    print("%s %g %g %g %g %g %g %g %g %g %g %g %g %g" %\
     (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,inflation_factor.mean(),masstend_diag,totmass))
+     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,ke_errav,ke_sprdav,inflation_factor.mean(),masstend_diag,totmass))
 
     # update state vector with serial filter or letkf.
     if not debug_model: 
