@@ -76,7 +76,8 @@ oberrstdev_wind = 1.e30 # don't assimilate winds
 # nature run created using twolayer_naturerun.py.
 filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model climo
 # perfect model
-filename_truth = filename_climo
+#filename_truth = filename_climo
+filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 
 print('# filename_modelclimo=%s' % filename_climo)
 print('# filename_truth=%s' % filename_truth)
@@ -110,8 +111,11 @@ diff_order=nc_climo.diff_order
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
+div2_diff_efold=1800.
+#div2_diff_efold=1.e30
 model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,\
-umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
+umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold,\
+div2_diff_efold=div2_diff_efold)
 if debug_model:
    print('N,Nt,L=',N,Nt,L)
    print('theta1,theta2=',theta1,theta2)
@@ -514,7 +518,7 @@ for ntime in range(nassim):
             masstend_diag+=model.masstendvar/nanals
     else:
         # use joblib to run ens members on different cores (N_JOBS env var sets number of tasks).
-        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         masstend_diag=0.
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]

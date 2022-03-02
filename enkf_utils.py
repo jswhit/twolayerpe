@@ -49,7 +49,7 @@ def letkf_kernel(xens,hxens,obs,oberrs,covlocal,nlevs_update=None):
     def calcwts(hx, Rinv, ominusf):
         YbRinv = np.dot(hx, Rinv)
         pa = (nanals - 1) * np.eye(nanals) + np.dot(YbRinv, hx.T)
-        evals, eigs = np.linalg.eigh(pa)
+        evals, eigs = eigh(pa)
         painv = np.dot(np.dot(eigs, np.diag(np.sqrt(1.0 / evals))), eigs.T)
         tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
         return np.sqrt(nanals - 1) * painv + tmp[:, np.newaxis]
@@ -82,7 +82,7 @@ def letkfwts_kernel(hxens,obs,oberrs,covlocal):
     def calcwts(hx, Rinv, ominusf):
         YbRinv = np.dot(hx, Rinv)
         pa = (nanals - 1) * np.eye(nanals) + np.dot(YbRinv, hx.T)
-        evals, eigs = np.linalg.eigh(pa)
+        evals, eigs = eigh(pa)
         painv = np.dot(np.dot(eigs, np.diag(np.sqrt(1.0 / evals))), eigs.T)
         tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
         return np.sqrt(nanals - 1) * painv + tmp[:, np.newaxis]

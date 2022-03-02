@@ -4,9 +4,9 @@ import numpy as np
 import os, time
 
 # grid, time step info
-N = 64 
+N = 128 
 L = 20000.e3
-dt = 600 # time step in seconds
+dt = 300 # time step in seconds
 
 # get OMP_NUM_THREADS (threads to use) from environment.
 threads = int(os.getenv('OMP_NUM_THREADS','1'))

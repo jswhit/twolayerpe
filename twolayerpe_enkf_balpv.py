@@ -64,7 +64,7 @@ profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
 fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
-baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
+baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
 ivar = 0 # 0 for u,v update, 1 for pv
 if ivar == 0:
     nlevs_update = 4
@@ -87,6 +87,7 @@ oberrstdev_wind = 1.e30 # don't assimilate winds
 filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model climo
 # perfect model
 filename_truth = filename_climo
+#filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 
 print('# filename_modelclimo=%s' % filename_climo)
 print('# filename_truth=%s' % filename_truth)
@@ -120,7 +121,8 @@ diff_order=nc_climo.diff_order
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
-model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,\
+div2_diff_efold=1800.
+model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,div2_diff_efold=div2_diff_efold,\
 umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
 if debug_model:
    print('N,Nt,L=',N,Nt,L)
@@ -365,10 +367,10 @@ def balens(model,uens,vens,dzens,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,
     return uens_bal,vens_bal,dzens_bal
 
 def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
-           theta1=300,theta2=330,f=1.e-4,\
+           theta1=300,theta2=330,f=1.e-4,div2_diff_efold=1.e30,\
            zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=0):
     ft = Fouriert(N,L,threads=1)
-    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,\
+    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
     vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
     vrt = ft.spectogrd(vrtspec)
@@ -484,7 +486,7 @@ for ntime in range(nassim):
     if n_jobs == 0:
         uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,nodiv=nodiv)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],nodiv=nodiv,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],nodiv=nodiv,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
         dzens_bal = np.empty(dzens.shape, dzens.dtype)
         for nanal in range(nanals):
@@ -563,7 +565,7 @@ for ntime in range(nassim):
         if n_jobs == 0:
             uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,nodiv=nodiv)
         else:
-            results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],nodiv=nodiv,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+            results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],nodiv=nodiv,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
             for nanal in range(nanals):
                 uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
 
@@ -655,7 +657,7 @@ for ntime in range(nassim):
             masstend_diag+=model.masstendvar/nanals
     else:
         # use joblib to run ens members on different cores (N_JOBS env var sets number of tasks).
-        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         masstend_diag=0.
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
