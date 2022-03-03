@@ -2,43 +2,46 @@
 # vorticity and continuity equations)
 import numpy as np
 
-def getincbal(ft,model,dzb,vrtb,divb,vrt,div=None,nitermax=100,relax=0.02,eps=1.e-4,verbose=False):
+def getincbal(model,dzb,vrtb,divb,vrt,div=None,nitermax=100,relax=0.02,eps=1.e-4,verbose=False):
     """computes balanced layer thickness and divergence increment given vorticity increment (and background)."""
  
     # first, solve non-linear balance equation to get layer thickness given vorticity
-    vrtspec = ft.grdtospec(vrt)
-    vrtspecb = ft.grdtospec(vrtb)
-    psispec = ft.invlap*vrtspec
-    psispecb = ft.invlap*vrtspecb
-    psixx = ft.spectogrd(-ft.k**2*psispec)
-    psixxb = ft.spectogrd(-ft.k**2*psispecb)
+    vrtspec = model.ft.grdtospec(vrt)
+    vrtspecb = model.ft.grdtospec(vrtb)
+    psispec = model.ft.invlap*vrtspec
+    psispecb = model.ft.invlap*vrtspecb
+    psixx = model.ft.spectogrd(-ft.k**2*psispec)
+    psixxb = model.ft.spectogrd(-ft.k**2*psispecb)
     psiyy = vrt - psixx
     psiyyb = vrtb - psixxb
-    psixy = ft.spectogrd(-ft.k*ft.l*psispec)
-    psixyb = ft.spectogrd(-ft.k*ft.l*psispecb)
-    tmpspec = model.f*vrtspec + 2.*ft.grdtospec(psixxb*psiyy + psixx*psiyyb - 2.*psixyb*psixy)
-    mspec = ft.invlap*tmpspec
+    psixy = model.ft.spectogrd(-ft.k*ft.l*psispec)
+    psixyb = model.ft.spectogrd(-ft.k*ft.l*psispecb)
+    tmpspec = model.f*vrtspec + 2.*model.ft.grdtospec(psixxb*psiyy + psixx*psiyyb - 2.*psixyb*psixy)
+    mspec = model.ft.invlap*tmpspec
     dzspec = np.zeros(mspec.shape, mspec.dtype)
     dzspec[0,...] = mspec[0,...]/model.theta1
     dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(model.theta2-model.theta1)
     dzspec[0,...] -= dzspec[1,...]
     dzspec = (model.theta1/model.grav)*dzspec # convert from exner function to height units (m)
-    dz = ft.spectogrd(dzspec)
+    dz = model.ft.spectogrd(dzspec)
     # remove area mean
     dz[0,...] = dz[0,...] - dz[0,...].mean()
     dz[1,...] = dz[1,...] - dz[1,...].mean()
-    dzx,dzy = ft.getgrad(dz)
-    dzspecb = ft.grdtospec(dzb)
-    dzbx,dzby = ft.getgrad(dzb)
-    urot = ft.spectogrd(-ft.il*psispec); vrot = ft.spectogrd(ft.ik*psispec)
-    divspecb = ft.grdtospec(divb)
-    ub, vb = ft.getuv(vrtspecb, divspecb)
+    if type(div) == bool and div == False: # don't compute balanced divergence
+        div = np.zeros(vrt.shape, vrt.dtype)
+        return dz,div
+    dzx,dzy = model.ft.getgrad(dz)
+    dzspecb = model.ft.grdtospec(dzb)
+    dzbx,dzby = model.ft.getgrad(dzb)
+    urot = model.ft.spectogrd(-ft.il*psispec); vrot = model.ft.spectogrd(ft.ik*psispec)
+    divspecb = model.ft.grdtospec(divb)
+    ub, vb = model.ft.getuv(vrtspecb, divspecb)
     dvrtspecdtb, ddivspecdtb, ddzspecdtb = model.gettend(vrtspecb,divspecb,dzspecb)
-    dvrtdtb = ft.spectogrd(dvrtspecdtb)
+    dvrtdtb = model.ft.spectogrd(dvrtspecdtb)
     massflux = (model.dzref[1] - dz[1])/model.tdiab
     massfluxb = (model.dzref[1] - dzb[1])/model.tdiab
 
-    def nlbalance_tend(ft,model,dvrtdt):
+    def nlbalance_tend(model,dvrtdt):
         # ft: Fourier transform object
         # f: coriolis param
         # grav: gravity
@@ -47,25 +50,25 @@ def getincbal(ft,model,dzb,vrtb,divb,vrt,div=None,nitermax=100,relax=0.02,eps=1.
         # returns dz, layer thickness of each layer
         # solve tendency of nonlinear balance eqn to get layer thickness tendency
         # given vorticity tendency (psixx,psiyy and psixy already computed)
-        dvrtspecdt = ft.grdtospec(dvrtdt)
-        dpsispecdt = ft.invlap*dvrtspecdt
-        dpsispecdtb = ft.invlap*dvrtspecdtb
-        dpsixxdt = ft.spectogrd(-ft.k**2*dpsispecdt)
-        dpsixxdtb = ft.spectogrd(-ft.k**2*dpsispecdtb)
+        dvrtspecdt = model.ft.grdtospec(dvrtdt)
+        dpsispecdt = model.ft.invlap*dvrtspecdt
+        dpsispecdtb = model.ft.invlap*dvrtspecdtb
+        dpsixxdt = model.ft.spectogrd(-ft.k**2*dpsispecdt)
+        dpsixxdtb = model.ft.spectogrd(-ft.k**2*dpsispecdtb)
         dpsiyydt = dvrtdt - dpsixxdt
         dpsiyydtb = dvrtdtb - dpsixxdtb
-        dpsixydt = ft.spectogrd(-ft.k*ft.l*dpsispecdt)
-        dpsixydtb = ft.spectogrd(-ft.k*ft.l*dpsispecdtb)
-        tmpspec = model.f*dvrtspecdt + 2.*ft.grdtospec(dpsixxdtb*psiyy + dpsixxdt*psiyyb + 
+        dpsixydt = model.ft.spectogrd(-ft.k*ft.l*dpsispecdt)
+        dpsixydtb = model.ft.spectogrd(-ft.k*ft.l*dpsispecdtb)
+        tmpspec = model.f*dvrtspecdt + 2.*model.ft.grdtospec(dpsixxdtb*psiyy + dpsixxdt*psiyyb + 
                                                        psixxb*dpsiyydt + psixx*dpsiyydtb - 
                                                        2*psixyb*dpsixydt - 2*psixy*dpsixydtb)
-        mspec = ft.invlap*tmpspec
+        mspec = model.ft.invlap*tmpspec
         dzspec = np.zeros(mspec.shape, mspec.dtype)
         dzspec[0,...] = mspec[0,...]/model.theta1
         dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(model.theta2-model.theta1)
         dzspec[0,...] -= dzspec[1,...]
         dzspec = (model.theta1/model.grav)*dzspec # convert from exner function to height units (m)
-        ddzdt = ft.spectogrd(dzspec)
+        ddzdt = model.ft.spectogrd(dzspec)
         # remove area mean
         ddzdt[0,...] = ddzdt[0,...] - ddzdt[0,...].mean()
         ddzdt[1,...] = ddzdt[1,...] - ddzdt[1,...].mean()
@@ -78,10 +81,10 @@ def getincbal(ft,model,dzb,vrtb,divb,vrt,div=None,nitermax=100,relax=0.02,eps=1.
          div = np.zeros(vrt.shape, vrt.dtype)
     converged=False
     for niter in range(nitermax):
-        divspec = ft.grdtospec(div)
-        chispec = ft.invlap*divspec
-        udivspec = ft.ik*chispec; vdivspec = ft.il*chispec
-        udiv = ft.spectogrd(udivspec); vdiv = ft.spectogrd(vdivspec)
+        divspec = model.ft.grdtospec(div)
+        chispec = model.ft.invlap*divspec
+        udivspec = model.ft.ik*chispec; vdivspec = model.ft.il*chispec
+        udiv = model.ft.spectogrd(udivspec); vdiv = model.ft.spectogrd(vdivspec)
         u = urot+udiv; v = vrot+vdiv
         # compute initial guess of vorticity tendency 
         # first, transform fields from spectral space to grid space.
@@ -93,12 +96,12 @@ def getincbal(ft,model,dzb,vrtb,divb,vrt,div=None,nitermax=100,relax=0.02,eps=1.
         tmp2[0] += -u[0]/model.tdrag
         tmp1 += 0.5*(v[1]-v[0])*massfluxb/dzb
         tmp2 -= 0.5*(u[1]-u[0])*massfluxb/dzb
-        ddivdtspec, dvrtdtspec = ft.getvrtdivspec(tmp1,tmp2)
+        ddivdtspec, dvrtdtspec = model.ft.getvrtdivspec(tmp1,tmp2)
         dvrtdtspec *= -1
         dvrtdtspec += model.hyperdiff*vrtspec
-        dvrtdt = ft.spectogrd(dvrtdtspec)
+        dvrtdt = model.ft.spectogrd(dvrtdtspec)
         # infer layer thickness tendency from d/dt of balance eqn.
-        ddzdt = nlbalance_tend(ft,model,dvrtdt)
+        ddzdt = nlbalance_tend(model,dvrtdt)
         # new estimate of divergence from continuity eqn (neglect diabatic mass flux term)
         tmp1[0] = massflux; tmp1[1] = -massflux
         divnew = -(1./dzb)*(ddzdt + ub*dzx + u*dzbx  + vb*dzy + v*dzby + divb*dz - tmp1)
@@ -147,13 +150,13 @@ if __name__ == "__main__":
     uensmean_b = u_b.mean(axis=0)
     vensmean_b = v_b.mean(axis=0)
     dzensmean_b = dz_b.mean(axis=0)
-    vrtspec, divspec = ft.getvrtdivspec(uensmean_b,vensmean_b)
-    vrtensmean_b = ft.spectogrd(vrtspec); divensmean_b = ft.spectogrd(divspec)
+    vrtspec, divspec = model.ft.getvrtdivspec(uensmean_b,vensmean_b)
+    vrtensmean_b = model.ft.spectogrd(vrtspec); divensmean_b = model.ft.spectogrd(divspec)
     uensmean_a = u_a.mean(axis=0)
     vensmean_a = v_a.mean(axis=0)
     dzensmean_a = dz_a.mean(axis=0)
-    vrtspec, divspec = ft.getvrtdivspec(uensmean_a,vensmean_a)
-    vrtensmean_a = ft.spectogrd(vrtspec); divensmean_a = ft.spectogrd(divspec)
+    vrtspec, divspec = model.ft.getvrtdivspec(uensmean_a,vensmean_a)
+    vrtensmean_a = model.ft.spectogrd(vrtspec); divensmean_a = model.ft.spectogrd(divspec)
 
     model = TwoLayer(ft,600.,zmid=nc.zmid,ztop=nc.ztop,tdrag=nc.tdrag,tdiab=nc.tdiab,\
     umax=nc.umax,jetexp=nc.jetexp,theta1=nc.theta1,theta2=nc.theta2,diff_efold=nc.diff_efold)
@@ -161,7 +164,7 @@ if __name__ == "__main__":
     vrtinc = vrtensmean_a-vrtensmean_b
     divinc = divensmean_a-divensmean_b
     dzinc = dzensmean_a-dzensmean_b
-    dzincbal,divincbal = getincbal(ft,model,dzensmean_b,vrtensmean_b,divensmean_b,vrtinc,div=None,\
+    dzincbal,divincbal = getincbal(model,dzensmean_b,vrtensmean_b,divensmean_b,vrtinc,div=None,\
                          nitermax=1000,relax=0.02,eps=1.e-4,verbose=False)
     dznew = dzensmean_b+dzincbal
     print('updated dz min/max',dznew.min(), dznew.max())
@@ -171,12 +174,12 @@ if __name__ == "__main__":
     #    uinc = u_a[nmem] - u_b[nmem]
     #    vinc = v_a[nmem] - v_b[nmem]
     #    dzinc = dz_a[nmem] - dz_b[nmem]
-    #    vrtspec, divspec = ft.getvrtdivspec(uinc,vinc)
-    #    vrtinc = ft.spectogrd(vrtspec); divinc = ft.spectogrd(divspec)
-    #    vrtspec, divspec = ft.getvrtdivspec(u_b[nmem],v_b[nmem])
-    #    vrt_b = ft.spectogrd(vrtspec); div_b = ft.spectogrd(divspec)
+    #    vrtspec, divspec = model.ft.getvrtdivspec(uinc,vinc)
+    #    vrtinc = model.ft.spectogrd(vrtspec); divinc = model.ft.spectogrd(divspec)
+    #    vrtspec, divspec = model.ft.getvrtdivspec(u_b[nmem],v_b[nmem])
+    #    vrt_b = model.ft.spectogrd(vrtspec); div_b = model.ft.spectogrd(divspec)
     #    # compute balanced layer thickness and divergence given vorticity.
-    #    dzincbal,divincbal = getincbal(ft,model,dz_b[nmem],vrt_b,div_b,vrtinc,div=None,\
+    #    dzincbal,divincbal = getincbal(model,dz_b[nmem],vrt_b,div_b,vrtinc,div=None,\
     #                         nitermax=1000,relax=0.02,eps=1.e-4,verbose=False)
     #    print(nmem)
     #    print(dzinc.min(), dzinc.max())
