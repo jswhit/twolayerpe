@@ -9,9 +9,9 @@ from pyfft import Fouriert
 
 class TwoLayer(object):
 
-    def __init__(self,ft,dt,theta1=300,theta2=330,f=1.e-4,\
+    def __init__(self,ft,dt,theta1=300,theta2=320,f=1.e-4,\
                  zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,\
-                 div2_diff_efold=1.e30,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=0):
+                 div2_diff_efold=1.e30,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
         dtype = ft.precision
         # setup model parameters
         self.dtype = dtype
@@ -31,13 +31,14 @@ class TwoLayer(object):
         # hyperdiffusion parameters
         self.diff_order = np.array(diff_order, dtype)  # hyperdiffusion order
         self.diff_efold = np.array(diff_efold, dtype)  # hyperdiff time scale (secs)
-        self.div2_diff_efold = np.array(div2_diff_efold, dtype) # laplacian div damping
+        self.div2_diff_efold = np.array(div2_diff_efold, dtype) # extra laplacian div damping
         ktot = np.sqrt(self.ft.ksqlsq)
         pi = np.array(np.pi,dtype)  
         ktotcutoff = np.array(pi * self.ft.N / self.ft.L, dtype)
         # integrating factor for hyperdiffusion
         self.hyperdiff = -(1./self.diff_efold)*(ktot/ktotcutoff)**self.diff_order
         if div2_diff_efold < 1.e10:
+            # extra laplacian diffusion of divergence to damp gravity waves
             self.divlapdiff = -(1./self.div2_diff_efold)*(ktot/ktotcutoff)**2
         else:
             self.divlapdiff = 0.
@@ -149,7 +150,8 @@ class TwoLayer(object):
         return vrtspec,divspec,dzspec
 
     def rk4step_iau(self,vrtspec,divspec,dzspec,fvrtspec,fdivspec,fdzspec):
-        # update state using 4th order runge-kutta
+        # update state using 4th order runge-kutta, adding extra forcing
+        # that is constant over the time interval.
         dt = self.dt
         k1vrt,k1div,k1thk = \
         self.gettend(vrtspec,divspec,dzspec)
@@ -190,9 +192,9 @@ class TwoLayer(object):
         else:
             return vrtspec, divspec, dzspec
 
-# simple function suitable for mulitprocessing (easy to serialize)
-def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=330,f=1.e-4,div2_diff_efold=1.e30,\
-              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=0):
+# simple driver functions suitable for mulitprocessing (easy to serialize)
+def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
+              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
@@ -204,8 +206,8 @@ def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=330,f=1.e-4,div2_diff_ef
     dz = ft.spectogrd(dzspec)
     return u,v,dz,model.masstendvar
 
-def run_model_iau(u,v,dz,uinc,vinc,dzinc,wts,N,L,dt,timesteps,theta1=300,theta2=330,f=1.e-4,div2_diff_efold=1.e30,\
-              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=0):
+def run_model_iau(u,v,dz,uinc,vinc,dzinc,wts,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
+              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
@@ -245,7 +247,7 @@ if __name__ == "__main__":
     ft = Fouriert(N,L,threads=threads)
 
     # create model instance, override default parameters.
-    model=TwoLayer(ft,dt,theta2=320,umax=12.5,jetexp=2)
+    model=TwoLayer(ft,dt)
 
     # vort, div initial conditions
     dtype = model.dtype
