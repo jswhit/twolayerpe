@@ -338,7 +338,7 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def balens(model,uens,vens,dzens,baldiv=True,nitermax=1000,divguess=True,relax=0.015,eps=1.e-2,verbose=False):
+def balens(model,uens,vens,dzens,baldiv=False,nitermax=1000,divguess=True,relax=0.01,eps=1.e-2,verbose=False):
     if not baldiv:
         # balanced div assumed zero
         divguess=None
@@ -368,6 +368,35 @@ def balens(model,uens,vens,dzens,baldiv=True,nitermax=1000,divguess=True,relax=0
         uens_bal[nmem], vens_bal[nmem] = model.ft.getuv(vrtspec,divspec)
         dzens_bal[nmem] = dzbal
     return uens_bal,vens_bal,dzens_bal
+
+def balmem(N,L,dt,umem,vmem,dzmem,baldiv=False,divguess=True,nitermax=1000,relax=0.01,eps=1.e-2,verbose=False,\
+           theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
+           zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
+    if not baldiv:
+        # balanced div assumed zero
+        divguess=None
+    ft = Fouriert(N,L,threads=1)
+    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
+    vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
+    vrt = ft.spectogrd(vrtspec)
+    if divguess==True:
+        div = model.ft.spectogrd(divspec) # use calculated div as initial guess
+    elif divguess==False:
+        div = None # use zeros as initial guess
+    else:
+        div = False # don't compute balanced div
+    dz1mean = dzmem[0].mean()
+    dz2mean = dzmem[1].mean()
+    dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
+                    adiab=False,nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+    if divguess is None:
+        # no balanced divergence (much faster)
+        divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+    else:
+        divspec = model.ft.grdtospec(divbal)
+    ubal,vbal = model.ft.getuv(vrtspec,divspec)
+    return ubal,vbal,dzbal
 
 def enstoctl(model,uens,vens,dzens,ivar=0):
     xens = np.empty((nanals,6,Nt**2),dtype)
@@ -471,7 +500,14 @@ for ntime in range(nassim):
     # update balanced and unbalanced parts separately
     # (assuming no cross-covariance)
     # impose balance constraint on balanced part of ens after the update
-    uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv)
+    if n_jobs == 0:
+        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv)
+    else:
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],baldiv=baldiv,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
+        dzens_bal = np.empty(dzens.shape, dzens.dtype)
+        for nanal in range(nanals):
+            uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
     uens_unbal = uens-uens_bal
     vens_unbal = vens-vens_bal
     dzens_unbal = dzens-dzens_bal
@@ -543,7 +579,14 @@ for ntime in range(nassim):
     #dzens_bal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
     # balance 'balanced' analysis ensemble
-    uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv)
+    if n_jobs == 0:
+        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv)
+    else:
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],baldiv=baldiv,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
+        dzens_bal = np.empty(dzens.shape, dzens.dtype)
+        for nanal in range(nanals):
+            uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
 
     if hcovlocal_scale_unbal > 1001: # otherwise don't update unbalanced part.
         # EnKF update for unbalanced part.
