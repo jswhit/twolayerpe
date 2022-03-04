@@ -129,9 +129,9 @@ if not read_restart:
     dz_climo = nc_climo.variables['dz']
     indxran = rsics.choice(u_climo.shape[0],size=nanals,replace=False)
 else:
-    ncinit = Dataset('%s_restart.nc' % exptname, mode='r', format='NETCDF4_CLASSIC')
+    ncinit = Dataset('%s.nc' % exptname, mode='r', format='NETCDF4_CLASSIC')
     ncinit.set_auto_mask(False)
-    uens[:] = ncinit.variables['v_b'][-1,...]
+    uens[:] = ncinit.variables['u_b'][-1,...]
     vens[:] = ncinit.variables['v_b'][-1,...]
     dzens[:] = ncinit.variables['dz_b'][-1,...]
     tstart = ncinit.variables['t'][-1]
