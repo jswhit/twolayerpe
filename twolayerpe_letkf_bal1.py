@@ -3,22 +3,22 @@ from netCDF4 import Dataset
 import sys, time, os
 from twolayer import TwoLayer, run_model
 from pyfft import Fouriert
-from enkf_utils import cartdist,letkf_update,serial_update,gaspcohn
+from enkf_utils import cartdist,letkfwts_compute,serial_update,gaspcohn
 from nlbal_utils import getbal
 from joblib import Parallel, delayed
 
-# EnKF cycling for two-layer pe turbulence model with interface height obs.
+# LETKF cycling for two-layer pe turbulence model with interface height obs.
 # horizontal localization (no vertical).
 # Relaxation to prior spread
 # inflation, or Hodyss and Campbell inflation.
 # random observing network.
-# Options for serial EnSRF or LETKF.
+
+# this version uses same wts (and localization) for balanced and unbalanced part
 
 if len(sys.argv) == 1:
    msg="""
-python twolayerpe_enkf_bal.py hcovlocal_scale hcovlocal_scale_unbal  <covinflate1 covinflate2>
-   hcovlocal_scale = horizontal localization scale in km for balanced part
-   hcovlocal_scale_unbal = horizontal localization scale in km for unbalanced part
+python twolayerpe_enkf_bal.py hcovlocal_scale <covinflate1 covinflate2>
+   hcovlocal_scale = horizontal localization scale in km
    no vertical localization.
    covinflate1,covinflate2: inflation parameters (optional).
    if only covinflate1 is specified, it is interpreted as the relaxation
@@ -33,22 +33,18 @@ python twolayerpe_enkf_bal.py hcovlocal_scale hcovlocal_scale_unbal  <covinflate
 
 # horizontal covariance localization length scale in meters.
 hcovlocal_scale = 1.e3*float(sys.argv[1])
-# if hcovlocal_scale_unbal=1, unbalanced part cycled but not updated.
-# if hcovlocal_scale_unbal=0, unbalanced part of analysis set to zero.
-# if hcovlocal_scale_unbal>1, unbalanced part updated assuming bal and unbal parts uncorrelated.
-hcovlocal_scale_unbal = 1.e3*float(sys.argv[2])
 
 # optional inflation parameters:
 # (covinflate2 <= 0 for RTPS inflation
 # (http://journals.ametsoc.org/doi/10.1175/MWR-D-11-00276.1),
 # otherwise use Hodyss et al inflation
 # (http://journals.ametsoc.org/doi/abs/10.1175/MWR-D-15-0329.1)
-if len(sys.argv) == 4:
-    covinflate1 = float(sys.argv[3])
+if len(sys.argv) == 3:
+    covinflate1 = float(sys.argv[2])
     covinflate2 = -1
-elif len(sys.argv) == 5:
-    covinflate1 = float(sys.argv[3])
-    covinflate2 = float(sys.argv[4])
+elif len(sys.argv) == 4:
+    covinflate1 = float(sys.argv[2])
+    covinflate2 = float(sys.argv[3])
 else:
     covinflate1 = 1.
     covinflate2 = 1.
@@ -62,9 +58,9 @@ diff_efold = None # use diffusion from climo file
 
 profile = False # turn on profiling?
 
-use_letkf = True # if False, use serial EnSRF
-fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
-baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
+fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
+baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
+dont_update_unbal=False # if True, don't update unbal part, if None set unbal anal part to zero
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 if ivar == 0:
     nlevs_update = 4
@@ -168,8 +164,8 @@ if not read_restart:
 else:
     ncinit.close()
 
-print("# hcovlocal=%g hcovlocal_unbal=%g baldiv=%s  use_letkf=%s covinf1=%s covinf2=%s nanals=%s" %\
-     (hcovlocal_scale/1000.,hcovlocal_scale_unbal/1000.,baldiv,use_letkf,covinflate1,covinflate2,nanals))
+print("# hcovlocal=%g baldiv=%s dont_update_unbal=%s covinf1=%s covinf2=%s nanals=%s" %\
+     (hcovlocal_scale/1000.,baldiv,dont_update_unbal,covinflate1,covinflate2,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
@@ -195,10 +191,6 @@ covlocal1_tmp = np.empty((nobs,Nt**2),dtype)
 covlocal1u_tmp = np.empty((nobs,Nt**2),dtype)
 covlocal_tmp = np.empty((5*nobs,Nt**2),dtype)
 xens = np.empty((nanals,6,Nt**2),dtype)
-if not use_letkf:
-    obcovlocal1 = np.empty((nobs,nobs),dtype)
-else:
-    obcovlocal = None
 
 obtimes = nc_truth.variables['t'][:]
 if read_restart:
@@ -477,24 +469,11 @@ for ntime in range(nassim):
         dist = cartdist(xob[nob],yob[nob],x,y,nc_climo.L,nc_climo.L)
         covlocal1 = gaspcohn(dist/hcovlocal_scale)
         covlocal1_tmp[nob] = covlocal1.ravel()
-        covlocal1u = gaspcohn(dist/hcovlocal_scale_unbal)
-        covlocal1u_tmp[nob] = covlocal1u.ravel()
         dist = cartdist(xob[nob],yob[nob],xob,yob,nc_climo.L,nc_climo.L)
-        if not use_letkf: obcovlocal1[nob] = gaspcohn(dist/hcovlocal_scale)
     covlocal_tmp[nobs:2*nobs,:] = covlocal1_tmp
     covlocal_tmp[2*nobs:3*nobs,:] = covlocal1_tmp
     covlocal_tmp[3*nobs:4*nobs,:] = covlocal1_tmp
     covlocal_tmp[4*nobs:,:] = covlocal1_tmp
-    if not use_letkf:
-        obcovlocal = np.block(
-            [
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1]
-            ]
-        )
 
     # split background into balanced and unbalanced parts
     # update balanced and unbalanced parts separately
@@ -515,6 +494,9 @@ for ntime in range(nassim):
     # compute forward operator.
     # hxens is ensemble in observation space.
     hxens = gethofx(uens,vens,ztop-dzens[:,1,...],indxob,nanals,nobs)
+
+    # calculate LETKF weights
+    wts = letkfwts_compute(hxens,obs,oberrvar,covlocal_tmp,n_jobs)
 
     if savedata is not None:
         u_t[ntime] = u_truth[ntime+ntstart]
@@ -548,11 +530,10 @@ for ntime in range(nassim):
 
     # update state vector with serial filter or letkf.
     if not debug_model: 
-        if use_letkf:
-            # only update first four fields (dzens_bal will be inferred from balanced u,v)
-            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs,nlevs_update=nlevs_update) 
-        else:
-            xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
+        # update state vector using letkf weights
+        for k in range(xens.shape[1]):
+            for n in range(model.ft.Nt**2):
+                xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
         t2 = time.time()
         if profile: print('cpu time for EnKF update',t2-t1)
         xensmean_a = xens.mean(axis=0)
@@ -588,25 +569,19 @@ for ntime in range(nassim):
         for nanal in range(nanals):
             uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
 
-    if hcovlocal_scale_unbal > 1001: # otherwise don't update unbalanced part.
+    if not dont_update_unbal: # otherwise don't update unbalanced part.
         # EnKF update for unbalanced part.
         xens = enstoctl(model,uens_unbal,vens_unbal,dzens_unbal,ivar=0)
         xensmean_b = xens.mean(axis=0)
         xprime = xens-xensmean_b
         fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
-        # (different localization for unbalanced part)
-        covlocal_tmp[nobs:2*nobs,:] = covlocal1u_tmp
-        covlocal_tmp[2*nobs:3*nobs,:] = covlocal1u_tmp
-        covlocal_tmp[3*nobs:4*nobs,:] = covlocal1u_tmp
-        covlocal_tmp[4*nobs:,:] = covlocal1u_tmp
-
-        # update state vector with serial filter or letkf.
+        # update state vector with letkf.
         if not debug_model: 
-            if use_letkf:
-                xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
-            else:
-                xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
+            # update state vector using letkf weights
+            for k in range(xens.shape[1]):
+                for n in range(model.ft.Nt**2):
+                    xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
             t2 = time.time()
             if profile: print('cpu time for EnKF update',t2-t1)
             xensmean_a = xens.mean(axis=0)
@@ -629,15 +604,12 @@ for ntime in range(nassim):
 
         uens_unbal,vens_unbal,dzens_unbal = ctltoens(model,xens,ivar=0)
 
-    if hcovlocal_scale_unbal == 0:
+    if dont_update_unbal is None:
         # the unbalanced component of the analysis is set to zero
         uens = uens_bal
         vens = vens_bal
         dzens = dzens_bal
-        #dzens = dzens_bal + dzens_unbal # really only need this (and only for ens mean)
     else:
-        # note if hcovlocal_scale specified as 1 on command line, the unbalanced
-        # component is not updated (background is just cycled)
         uens = uens_bal + uens_unbal
         vens = vens_bal + vens_unbal
         dzens = dzens_bal + dzens_unbal
