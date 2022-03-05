@@ -4,7 +4,7 @@ import sys, time, os
 from twolayer import TwoLayer, run_model
 from pyfft import Fouriert
 from enkf_utils import cartdist,letkfwts_compute,gaspcohn
-from nlbal_utils import getbal
+from nlbal_utils import pvinvert
 from joblib import Parallel, delayed
 
 # LETKF cycling for two-layer pe turbulence model with interface height obs.
@@ -14,11 +14,12 @@ from joblib import Parallel, delayed
 # random observing network.
 
 # this version uses same wts (and localization) for balanced and unbalanced part
+# (but defines balanced flow using PV instead of vorticity)
 
 if len(sys.argv) == 1:
    msg="""
 python twolayerpe_enkf_bal.py hcovlocal_scale <covinflate1 covinflate2>
-   hcovlocal_scale = horizontal localization scale in km
+   hcovlocal_scale = horizontal localization scale in km 
    no vertical localization.
    covinflate1,covinflate2: inflation parameters (optional).
    if only covinflate1 is specified, it is interpreted as the relaxation
@@ -61,7 +62,7 @@ profile = False # turn on profiling?
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
 baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
 dont_update_unbal=False # if True, don't update unbal part, if None set unbal anal part to zero
-ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
+ivar = 0 # 0 for u,v update, 1 for pv
 if ivar == 0:
     nlevs_update = 4
 else:
@@ -118,8 +119,8 @@ diff_order=nc_climo.diff_order
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
-div2_diff_efold=1800.
-#div2_diff_efold=1.e30
+#div2_diff_efold=1800.
+div2_diff_efold=1.e30
 model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,div2_diff_efold=div2_diff_efold,\
 umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
 if debug_model:
@@ -317,7 +318,6 @@ def getspreaderr(uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     zsfc_sprdav = np.sqrt(zsfcsprd.mean())
     return vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,ke_errav,ke_sprdav
 
-# forward operator, ob space stats
 def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
     hxens = np.empty((nanals,5*nobs),dtype)
     for nanal in range(nanals):
@@ -328,30 +328,29 @@ def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def balens(model,uens,vens,dzens,baldiv=False,nitermax=1000,divguess=True,relax=0.01,eps=1.e-2,verbose=False):
-    if not baldiv:
-        # balanced div assumed zero
-        divguess=None
+if baldiv:
+    nodiv = False
+else:
+    nodiv = True
+
+def balens(model,uens,vens,dzens,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False):
     nanals = uens.shape[0]
     uens_bal = np.empty(uens.shape, uens.dtype)
     vens_bal = np.empty(uens.shape, uens.dtype)
     dzens_bal = np.empty(uens.shape, uens.dtype)
     for nmem in range(nanals):
-        if verbose: print('ens member ',nmem)
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
         vrt = model.ft.spectogrd(vrtspec)
-        if divguess==True:
-            div = model.ft.spectogrd(divspec) # use calculated div as initial guess
-        elif divguess==False:
-            div = None # use zeros as initial guess
-        else:
-            div = False # don't compute balanced div
-        dz1mean = dzens[nmem,...][0].mean()
-        dz2mean = dzens[nmem,...][1].mean()
-        dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
-                        adiab=False,nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-        if divguess is None:
-            # no balanced divergence (much faster)
+        pv = (vrt + model.f)/dzens[nmem]
+        dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dzens[nmem],nodiv=nodiv,\
+                                nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+        #dz1mean = dzens[nmem,0,...].mean()
+        #dz2mean = dzens[nmem,1,...].mean()
+        #dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=None,dz1mean=dz1mean,dz2mean=dz2mean,nodiv=nodiv,\
+        #                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+        vrtspec = model.ft.grdtospec(vrtbal)
+        if nodiv:
+            # no balanced divergence.
             divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         else:
             divspec = model.ft.grdtospec(divbal)
@@ -359,82 +358,68 @@ def balens(model,uens,vens,dzens,baldiv=False,nitermax=1000,divguess=True,relax=
         dzens_bal[nmem] = dzbal
     return uens_bal,vens_bal,dzens_bal
 
-def balmem(N,L,dt,umem,vmem,dzmem,baldiv=False,divguess=True,nitermax=1000,relax=0.01,eps=1.e-2,verbose=False,\
+def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
            theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
            zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
-    if not baldiv:
-        # balanced div assumed zero
-        divguess=None
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
     vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
     vrt = ft.spectogrd(vrtspec)
-    if divguess==True:
-        div = model.ft.spectogrd(divspec) # use calculated div as initial guess
-    elif divguess==False:
-        div = None # use zeros as initial guess
-    else:
-        div = False # don't compute balanced div
-    dz1mean = dzmem[0].mean()
-    dz2mean = dzmem[1].mean()
-    dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
-                    adiab=False,nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-    if divguess is None:
-        # no balanced divergence (much faster)
+    pv = (vrt + model.f)/dzmem
+    dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dzmem,nodiv=nodiv,\
+                            nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+    #dz1mean = dzmem[0,...].mean()
+    #dz2mean = dzmem[1,...].mean()
+    #dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=None,dz1mean=dz1mean,dz2mean=dz2mean,nodiv=nodiv,\
+    #                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+    vrtspec = ft.grdtospec(vrtbal)
+    if nodiv:
+        # no balanced divergence.
         divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     else:
-        divspec = model.ft.grdtospec(divbal)
-    ubal,vbal = model.ft.getuv(vrtspec,divspec)
+        divspec = ft.grdtospec(divbal)
+    ubal, vbal = ft.getuv(vrtspec,divspec)
     return ubal,vbal,dzbal
 
 def enstoctl(model,uens,vens,dzens,ivar=0):
     xens = np.empty((nanals,6,Nt**2),dtype)
     if ivar==0:
-        # update u,v
+        # update u,v,dz
         xens[:,0:2,:] = uens[:].reshape(nanals,2,model.ft.Nt**2)
         xens[:,2:4,:] = vens[:].reshape(nanals,2,model.ft.Nt**2)
     elif ivar==1:
-        # update vort,div
+        # update pv,div,dz
         for nmem in range(nanals):
             vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
             vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
-            xens[nmem,0:2,:] = vrt[:].reshape(2,model.ft.Nt**2)
+            pv = (vrt + model.f)/dzens[nmem]
+            xens[nmem,0:2,:] = pv[:].reshape(2,model.ft.Nt**2)
             xens[nmem,2:4,:] = div[:].reshape(2,model.ft.Nt**2)
-    elif ivar==2:
-        # update psi,chi
-        for nmem in range(nanals):
-            vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
-            psispec = model.ft.invlap*vrtspec; chispec = model.ft.invlap*psispec
-            psi = model.ft.spectogrd(psispec); chi = model.ft.spectogrd(psispec)
-            xens[nmem,0:2,:] = psi.reshape(2,model.ft.Nt**2)
-            xens[nmem,2:4,:] = chi.reshape(2,model.ft.Nt**2)
     else: 
-        raise ValueError('ivar myst be 0,1,or 2')
+        raise ValueError('ivar myst be 0 or 1')
     xens[:,4:6,:] = dzens[:].reshape(nanals,2,model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens,ivar=0):
+def ctltoens(model,xens,ivar=0,nodiv=True,
+             nitermax=1000,relax=0.015,eps=1.e-4,verbose=False):
     uens = np.empty((nanals,2,Nt,Nt),dtype)
     vens = np.empty((nanals,2,Nt,Nt),dtype)
     dzens = np.empty((nanals,2,Nt,Nt),dtype)
     if ivar == 0:
         uens[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
         vens[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        dzens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     elif ivar == 1:
         for nmem in range(nanals):
-            vrt = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            div = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            vrtspec = model.ft.grdtospec(vrt); divspec = model.ft.grdtospec(div)
+            pv = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
+            dz = xens[nmem,4:6,:].reshape(2,model.ft.Nt,model.ft.Nt) # equal to background, not updated
+            # invert pv balanced u,v,dz
+            dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dz,nodiv=nodiv,\
+                                    nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+            vrtspec = model.ft.grdtospec(vrtbal); divspec = model.ft.grdtospec(divbal)
             uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
-    elif ivar == 2:
-        for nmem in range(nanals):
-            psi = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            chi = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            psispec = model.ft.grdtospec(psi); chispec = model.ft.grdtospec(chi)
-            vrtspec = model.ft.lap*psispec;  divspec = model.ft.lap*chispec
-            uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
-    dzens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+            dzens[nmem] = dzbal
     return uens,vens,dzens
 
 masstend_diag = 0.
@@ -478,9 +463,9 @@ for ntime in range(nassim):
     # (assuming no cross-covariance)
     # impose balance constraint on balanced part of ens after the update
     if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv)
+        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,nodiv=nodiv)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],baldiv=baldiv,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],nodiv=nodiv,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
         dzens_bal = np.empty(dzens.shape, dzens.dtype)
         for nanal in range(nanals):
@@ -526,6 +511,7 @@ for ntime in range(nassim):
     xprime = xens-xensmean_b
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
+    # update state vector.
     if not debug_model: 
         # update state vector using letkf weights
         for k in range(nlevs_update):
@@ -552,19 +538,16 @@ for ntime in range(nassim):
         xens = xprime + xensmean_a
 
     uens_bal,vens_bal,dzens_bal = ctltoens(model,xens,ivar=ivar)
-    #uens_bal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
-    #vens_bal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
-    #dzens_bal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
-    # balance 'balanced' analysis ensemble
-    if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv)
-    else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],baldiv=baldiv,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
-        uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
-        dzens_bal = np.empty(dzens.shape, dzens.dtype)
-        for nanal in range(nanals):
-            uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
+    # balance 'balanced' analysis ensemble for u,v,dz control vector
+    # (done inside ctltoens for pv control vector)
+    if ivar==0:
+        if n_jobs == 0:
+            uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,nodiv=nodiv)
+        else:
+            results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],nodiv=nodiv,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+            for nanal in range(nanals):
+                uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
 
     if not dont_update_unbal: # otherwise don't update unbalanced part.
         # EnKF update for unbalanced part.
