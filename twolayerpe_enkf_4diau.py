@@ -191,6 +191,7 @@ else:
 assim_interval = obtimes[1]-obtimes[0]
 nsteps_iau = int(np.round(0.5*assim_interval/model.dt)) 
 assim_timesteps = int(np.round(assim_interval/model.dt))
+print('# div2_diff_efold = %s' % div2_diff_efold)
 print('# assim_interval = %s assim_timesteps = %s' % (assim_interval,assim_timesteps))
 print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,KEerr,KEsprd,inflation,masstend_diag,totdz')
 
