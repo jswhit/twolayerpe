@@ -62,6 +62,10 @@ fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area m
 baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
 dont_update_unbal=False # if True, don't update unbal part, if None set unbal anal part to zero
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
+if ivar == 0:
+    nlevs_update = 4
+else:
+    nlevs_update = 2
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
@@ -195,8 +199,8 @@ else:
     ntstart = 0
 assim_interval = obtimes[1]-obtimes[0]
 assim_timesteps = int(np.round(assim_interval/model.dt))
-print('# div2_diff_efold = %s' % div2_diff_efold)
 print('# assim_interval = %s assim_timesteps = %s' % (assim_interval,assim_timesteps))
+print('# div2_diff_efold = %s' % div2_diff_efold)
 print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,masstend_diag')
 
 # initialize model clock
@@ -274,7 +278,7 @@ if savedata is not None:
     ensvar[:] = np.arange(1,nanals+1)
 
 # calculate spread/error stats in model space
-def getspreaderr(uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
+def getspreaderr(model,uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     nanals = uens.shape[0]
     uensmean = uens.mean(axis=0)
     uerr = ((uensmean-u_truth))**2
@@ -288,26 +292,33 @@ def getspreaderr(uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     ke_sprd = usprd+vsprd
     vecwind_err = np.sqrt(uerr+verr)
     vecwind_sprd = np.sqrt(usprd+vsprd)
-    zsfc = ztop - dzens.sum(axis=1)
-    zmid = ztop - dzens[:,1,:,:]
+
+    #zsfc = model.ztop - dzens.sum(axis=1)
+    #zmid = model.ztop - dzens[:,1,:,:]
+    #zsfc_truth = model.ztop-dz_truth.sum(axis=0)
+    #zmid_truth = model.ztop-dz_truth[1,:,:]
+
+    # define zmid, zdfc using M/g (analagous to geopotential height in press coords)
+    zsfc = dzens[:,0,...]+dzens[:,1,...]
+    zmid = zsfc + (model.delth/model.theta1)*dzens[:,1,...]
+    zsfc_truth = dz_truth[0,...]+dz_truth[1,...]
+    zmid_truth = zsfc_truth + (model.delth/model.theta1)*dz_truth[1,...]
+
     zsfcensmean = zsfc.mean(axis=0)
-    zsfcprime = zsfc-zsfcensmean
-    zsfcsprd = (zsfcprime**2).sum(axis=0)/(nanals-1)
-    zsfc_truth = ztop-dz_truth.sum(axis=0)
-    zsfcerr =  (zsfcensmean-zsfc_truth)**2
     zmidensmean = zmid.mean(axis=0)
-    zmid_truth = ztop-dz_truth[1,:,:]
     zmiderr = (zmidensmean-zmid_truth)**2
     zmidprime = zmid-zmidensmean
     zmidsprd = (zmidprime**2).sum(axis=0)/(nanals-1)
+    zsfcerr =  (zsfcensmean-zsfc_truth)**2
+    zsfcprime = zsfc-zsfcensmean
+    zsfcsprd = (zsfcprime**2).sum(axis=0)/(nanals-1)
+
     vecwind1_errav = vecwind_err[0,...].mean()
     vecwind2_errav = vecwind_err[1,...].mean()
     vecwind1_sprdav = vecwind_sprd[0,...].mean()
     vecwind2_sprdav = vecwind_sprd[1,...].mean()
     ke_errav = np.sqrt(ke_err.mean())
     ke_sprdav = np.sqrt(ke_sprd.mean())
-    zsfc_errav = zsfcerr.mean()
-    zsfc_sprdav = zsfcsprd.mean()
     zmid_errav = np.sqrt(zmiderr.mean())
     zmid_sprdav = np.sqrt(zmidsprd.mean())
     zsfc_errav = np.sqrt(zsfcerr.mean())
@@ -510,7 +521,7 @@ for ntime in range(nassim):
 
     # prior stats.
     vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b,ke_errav,ke_sprdav=getspreaderr(uens,vens,dzens,\
+    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b,ke_errav,ke_sprdav=getspreaderr(model,uens,vens,dzens,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
     totmass = ((dzens[:,0,...]+dzens[:,1,...]).mean(axis=0)).mean()/1000.
     print("%s %g %g %g %g %g %g %g %g %g %g %g %g %g" %\
@@ -525,7 +536,7 @@ for ntime in range(nassim):
 
     if not debug_model: 
         # update state vector using letkf weights
-        for k in range(xens.shape[1]):
+        for k in range(nlevs_update): # only need to update winds or vorticity
             for n in range(model.ft.Nt**2):
                 xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
         t2 = time.time()
@@ -616,7 +627,7 @@ for ntime in range(nassim):
     # posterior stats
     if posterior_stats:
         vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-        zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a,ke_errav,ke_sprdav=getspreaderr(uens,vens,dzens,\
+        zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a,ke_errav,ke_sprdav=getspreaderr(model,uens,vens,dzens,\
         u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
         print("%s %g %g %g %g %g %g %g %g %g %g" %\
         (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
