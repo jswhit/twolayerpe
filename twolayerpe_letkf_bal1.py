@@ -62,10 +62,6 @@ fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area m
 baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
 dont_update_unbal=False # if True, don't update unbal part, if None set unbal anal part to zero
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
-if ivar == 0:
-    nlevs_update = 4
-else:
-    nlevs_update = 2
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
@@ -118,8 +114,8 @@ diff_order=nc_climo.diff_order
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
-div2_diff_efold=1800.
-#div2_diff_efold=1.e30
+#div2_diff_efold=1800.
+div2_diff_efold=1.e30
 model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,div2_diff_efold=div2_diff_efold,\
 umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
 if debug_model:
@@ -529,7 +525,7 @@ for ntime in range(nassim):
 
     if not debug_model: 
         # update state vector using letkf weights
-        for k in range(nlevs_update):
+        for k in range(xens.shape[1]):
             for n in range(model.ft.Nt**2):
                 xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
         t2 = time.time()
