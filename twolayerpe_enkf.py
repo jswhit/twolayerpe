@@ -70,6 +70,7 @@ nassim = 800 # assimilation times to run
 nanals = 20 # ensemble members
 
 oberrstdev_zmid = 100.  # interface height ob error in meters
+oberrstdev_zfc = 10. # surface height ob error in meters
 #oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
 oberrstdev_wind = 1.e30 # don't assimilate winds
 
@@ -174,14 +175,15 @@ dz_truth = nc_truth.variables['dz']
 
 # set up arrays for obs and localization function
 print('# random network nobs = %s' % nobs)
-oberrvar = np.ones(5*nobs,dtype)
+oberrvar = np.ones(6*nobs,dtype)
 oberrvar[0:4*nobs] = oberrstdev_wind*oberrvar[0:4*nobs]
-oberrvar[4*nobs:] = oberrstdev_zmid*oberrvar[4*nobs:]
+oberrvar[4*nobs:5:nobs] = oberrstdev_zsfc*oberrvar[4*nobs:]
+oberrvar[5*nobs:] = oberrstdev_zmid*oberrvar[4*nobs:]
 
-obs = np.empty(5*nobs,dtype)
+obs = np.empty(6*nobs,dtype)
 covlocal1 = np.empty(Nt**2,dtype)
 covlocal1_tmp = np.empty((nobs,Nt**2),dtype)
-covlocal_tmp = np.empty((5*nobs,Nt**2),dtype)
+covlocal_tmp = np.empty((6*nobs,Nt**2),dtype)
 if not use_letkf:
     obcovlocal1 = np.empty((nobs,nobs),dtype)
 else:
@@ -256,6 +258,7 @@ if savedata is not None:
     obsv1 = nc.createVariable('obsv1',dtype,('t','obs'))
     obsu2 = nc.createVariable('obsu2',dtype,('t','obs'))
     obsv2 = nc.createVariable('obsv2',dtype,('t','obs'))
+    obszsfc = nc.createVariable('obszsfc',dtype,('t','obs'))
     obszmid = nc.createVariable('obszmid',dtype,('t','obs'))
     x_obs = nc.createVariable('x_ob',dtype,('t','obs'))
     y_obs = nc.createVariable('y_ob',dtype,('t','obs'))
@@ -290,7 +293,7 @@ def getspreaderr(model,uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     vecwind_err = np.sqrt(uerr+verr)
     vecwind_sprd = np.sqrt(usprd+vsprd)
 
-    #zsfc = model.ztop - dzens.sum(axis=1)
+    #zsfc = dzens.sum(axis=1) - model.ztop
     #zmid = model.ztop - dzens[:,1,:,:]
     #zsfc_truth = model.ztop-dz_truth.sum(axis=0)
     #zmid_truth = model.ztop-dz_truth[1,:,:]
@@ -323,14 +326,15 @@ def getspreaderr(model,uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     return vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,ke_errav,ke_sprdav
 
 # forward operator, ob space stats
-def gethofx(uens,vens,zmidens,indxob,nanals,nobs):
-    hxens = np.empty((nanals,5*nobs),dtype)
+def gethofx(uens,vens,zfscens,zmidens,indxob,nanals,nobs):
+    hxens = np.empty((nanals,6*nobs),dtype)
     for nanal in range(nanals):
         hxens[nanal,0:nobs] = uens[nanal,0,...].ravel()[indxob] # interface height obs
         hxens[nanal,nobs:2*nobs] = vens[nanal,0,...].ravel()[indxob] # interface height obs
         hxens[nanal,2*nobs:3*nobs] = uens[nanal,1,...].ravel()[indxob] # interface height obs
         hxens[nanal,3*nobs:4*nobs] = vens[nanal,1,...].ravel()[indxob] # interface height obs
-        hxens[nanal,4*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
+        hxens[nanal,4*nobs:5:nobs] = zsfcens[nanal,...].ravel()[indxob] # interface height obs
+        hxens[nanal,5*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
 def enstoctl(model,uens,vens,dzens,ivar=0):
@@ -406,7 +410,9 @@ for ntime in range(nassim):
     obs[nobs:2*nobs] = v_truth[ntime+ntstart,0,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
     obs[2*nobs:3*nobs] = u_truth[ntime+ntstart,1,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
     obs[3*nobs:4*nobs] = v_truth[ntime+ntstart,1,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
-    obs[4*nobs:] = ztop - dz_truth[ntime+ntstart,1,:,:].ravel()[indxob] +\
+    obs[4*nobs:5*nobs] = dz_truth[ntime_ntstart,...].sum(axis=0) - ztop +\
+                   rsobs.normal(scale=oberrstdev_zsfc,size=nobs) 
+    obs[5*nobs:] = ztop - dz_truth[ntime+ntstart,1,:,:].ravel()[indxob] +\
                    rsobs.normal(scale=oberrstdev_zmid,size=nobs) 
     xob = x.ravel()[indxob]
     yob = y.ravel()[indxob]
@@ -421,7 +427,8 @@ for ntime in range(nassim):
     covlocal_tmp[nobs:2*nobs,:] = covlocal1_tmp
     covlocal_tmp[2*nobs:3*nobs,:] = covlocal1_tmp
     covlocal_tmp[3*nobs:4*nobs,:] = covlocal1_tmp
-    covlocal_tmp[4*nobs:,:] = covlocal1_tmp
+    covlocal_tmp[4*nobs:5*nobs,:] = covlocal1_tmp
+    covlocal_tmp[5*nobs:,:] = covlocal1_tmp
     if not use_letkf:
         obcovlocal = np.block(
             [
@@ -435,7 +442,7 @@ for ntime in range(nassim):
 
     # compute forward operator.
     # hxens is ensemble in observation space.
-    hxens = gethofx(uens,vens,ztop-dzens[:,1,...],indxob,nanals,nobs)
+    hxens = gethofx(uens,vens,dzens.sum(axis=1)-ztop,ztop-dzens[:,1,...],indxob,nanals,nobs)
 
     if savedata is not None:
         u_t[ntime] = u_truth[ntime+ntstart]
@@ -448,7 +455,8 @@ for ntime in range(nassim):
         obsv1[ntime] = obs[nobs:2*nobs]
         obsu2[ntime] = obs[2*nobs:3*nobs]
         obsu2[ntime] = obs[3*nobs:4*nobs]
-        obszmid[ntime] = obs[4*nobs:]
+        obszfc[ntime] = obs[4*nobs:5*nobs]
+        obszmid[ntime] = obs[5*nobs:]
         x_obs[ntime] = xob
         y_obs[ntime] = yob
 
