@@ -299,7 +299,7 @@ def getspreaderr(model,uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     #zmid_truth = model.ztop-dz_truth[1,:,:]
 
     # define zmid, zdfc using M/g (analagous to geopotential height in press coords)
-    zsfc = dzens[:,0,...]+dzens[:,1,...]
+    zsfc = dzens.sum(axis=1)
     zmid = zsfc + (model.delth/model.theta1)*dzens[:,1,...]
     zsfc_truth = dz_truth[0,...]+dz_truth[1,...]
     zmid_truth = zsfc_truth + (model.delth/model.theta1)*dz_truth[1,...]
@@ -410,7 +410,7 @@ for ntime in range(nassim):
     obs[nobs:2*nobs] = v_truth[ntime+ntstart,0,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
     obs[2*nobs:3*nobs] = u_truth[ntime+ntstart,1,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
     obs[3*nobs:4*nobs] = v_truth[ntime+ntstart,1,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
-    obs[4*nobs:5*nobs] = dz_truth[ntime+ntstart,...].sum(axis=0).ravel()[indxob] - ztop +\
+    obs[4*nobs:5*nobs] = ztop - dz_truth[ntime+ntstart,...].sum(axis=0).ravel()[indxob] +\
                    rsobs.normal(scale=oberrstdev_zsfc,size=nobs) 
     obs[5*nobs:] = ztop - dz_truth[ntime+ntstart,1,:,:].ravel()[indxob] +\
                    rsobs.normal(scale=oberrstdev_zmid,size=nobs) 
@@ -442,7 +442,7 @@ for ntime in range(nassim):
 
     # compute forward operator.
     # hxens is ensemble in observation space.
-    hxens = gethofx(uens,vens,dzens.sum(axis=1)-ztop,ztop-dzens[:,1,...],indxob,nanals,nobs)
+    hxens = gethofx(uens,vens,ztop-dzens.sum(axis=1),ztop-dzens[:,1,...],indxob,nanals,nobs)
 
     if savedata is not None:
         u_t[ntime] = u_truth[ntime+ntstart]
