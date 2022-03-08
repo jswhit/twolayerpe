@@ -70,7 +70,7 @@ nassim = 800 # assimilation times to run
 nanals = 20 # ensemble members
 
 oberrstdev_zmid = 100.  # interface height ob error in meters
-oberrstdev_zfc = 10. # surface height ob error in meters
+oberrstdev_zsfc = 10. # surface height ob error in meters
 #oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
 oberrstdev_wind = 1.e30 # don't assimilate winds
 
@@ -112,8 +112,8 @@ diff_order=nc_climo.diff_order
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
-div2_diff_efold=1800.
-#div2_diff_efold=1.e30
+#div2_diff_efold=1800.
+div2_diff_efold=1.e30
 model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,\
 umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold,\
 div2_diff_efold=div2_diff_efold)
@@ -177,8 +177,8 @@ dz_truth = nc_truth.variables['dz']
 print('# random network nobs = %s' % nobs)
 oberrvar = np.ones(6*nobs,dtype)
 oberrvar[0:4*nobs] = oberrstdev_wind*oberrvar[0:4*nobs]
-oberrvar[4*nobs:5:nobs] = oberrstdev_zsfc*oberrvar[4*nobs:]
-oberrvar[5*nobs:] = oberrstdev_zmid*oberrvar[4*nobs:]
+oberrvar[4*nobs:5*nobs] = oberrstdev_zsfc*oberrvar[4*nobs:5*nobs]
+oberrvar[5*nobs:] = oberrstdev_zmid*oberrvar[5*nobs:]
 
 obs = np.empty(6*nobs,dtype)
 covlocal1 = np.empty(Nt**2,dtype)
@@ -326,14 +326,14 @@ def getspreaderr(model,uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     return vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,ke_errav,ke_sprdav
 
 # forward operator, ob space stats
-def gethofx(uens,vens,zfscens,zmidens,indxob,nanals,nobs):
+def gethofx(uens,vens,zsfcens,zmidens,indxob,nanals,nobs):
     hxens = np.empty((nanals,6*nobs),dtype)
     for nanal in range(nanals):
         hxens[nanal,0:nobs] = uens[nanal,0,...].ravel()[indxob] # interface height obs
         hxens[nanal,nobs:2*nobs] = vens[nanal,0,...].ravel()[indxob] # interface height obs
         hxens[nanal,2*nobs:3*nobs] = uens[nanal,1,...].ravel()[indxob] # interface height obs
         hxens[nanal,3*nobs:4*nobs] = vens[nanal,1,...].ravel()[indxob] # interface height obs
-        hxens[nanal,4*nobs:5:nobs] = zsfcens[nanal,...].ravel()[indxob] # interface height obs
+        hxens[nanal,4*nobs:5*nobs] = zsfcens[nanal,...].ravel()[indxob] # interface height obs
         hxens[nanal,5*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
@@ -410,7 +410,7 @@ for ntime in range(nassim):
     obs[nobs:2*nobs] = v_truth[ntime+ntstart,0,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
     obs[2*nobs:3*nobs] = u_truth[ntime+ntstart,1,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
     obs[3*nobs:4*nobs] = v_truth[ntime+ntstart,1,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
-    obs[4*nobs:5*nobs] = dz_truth[ntime_ntstart,...].sum(axis=0) - ztop +\
+    obs[4*nobs:5*nobs] = dz_truth[ntime+ntstart,...].sum(axis=0).ravel()[indxob] - ztop +\
                    rsobs.normal(scale=oberrstdev_zsfc,size=nobs) 
     obs[5*nobs:] = ztop - dz_truth[ntime+ntstart,1,:,:].ravel()[indxob] +\
                    rsobs.normal(scale=oberrstdev_zmid,size=nobs) 
