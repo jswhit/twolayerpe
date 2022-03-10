@@ -55,12 +55,14 @@ n_jobs = int(os.getenv('N_JOBS','0'))
 threads = 1
 
 diff_efold = None # use diffusion from climo file
+#div2_diff_efold=1800.
+div2_diff_efold=1.e30
 
 profile = False # turn on profiling?
 
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
-baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
-dont_update_unbal=False # if True, don't update unbal part, if None set unbal anal part to zero
+baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
+dont_update_unbal = False # if True, don't update unbal part, if None set unbal anal part to zero
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 if ivar == 0:
     nlevs_update = 4
@@ -68,7 +70,7 @@ else:
     nlevs_update = 2
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
-posterior_stats = True
+posterior_stats = False
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
@@ -77,8 +79,9 @@ nassim = 800 # assimilation times to run
 nanals = 20 # ensemble members
 
 oberrstdev_zmid = 100.  # interface height ob error in meters
-oberrstdev_zsfc = 10. # surface height ob error in meters
+#oberrstdev_zsfc = 10. # surface height ob error in meters
 #oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
+oberrstdev_zsfc = 1.e30 # surface height ob error in meters
 oberrstdev_wind = 1.e30 # don't assimilate winds
 
 # nature run created using twolayer_naturerun.py.
@@ -119,8 +122,6 @@ diff_order=nc_climo.diff_order
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
-#div2_diff_efold=1800.
-div2_diff_efold=1.e30
 model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,div2_diff_efold=div2_diff_efold,\
 umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
 if debug_model:
@@ -459,6 +460,12 @@ masstend_diag = 0.
 inflation_factor = np.ones((2,Nt,Nt))
 for ntime in range(nassim):
 
+    if baldiv:
+        if ntime < 10:
+            baldiv2=False
+        else:
+            baldiv2=True
+
     # check model clock
     if model.t != obtimes[ntime+ntstart]:
         raise ValueError('model/ob time mismatch %s vs %s' %\
@@ -499,9 +506,9 @@ for ntime in range(nassim):
     # (assuming no cross-covariance)
     # impose balance constraint on balanced part of ens after the update
     if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv)
+        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv2)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],baldiv=baldiv,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
         dzens_bal = np.empty(dzens.shape, dzens.dtype)
         for nanal in range(nanals):
@@ -581,9 +588,9 @@ for ntime in range(nassim):
 
     # balance 'balanced' analysis ensemble
     if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv)
+        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv2)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],baldiv=baldiv,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
         dzens_bal = np.empty(dzens.shape, dzens.dtype)
         for nanal in range(nanals):
