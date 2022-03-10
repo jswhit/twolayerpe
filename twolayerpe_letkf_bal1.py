@@ -49,49 +49,47 @@ else:
     covinflate1 = 1.
     covinflate2 = 1.
 
+# other parameters.
+diff_efold = None # use diffusion from climo file
+#div2_diff_efold=1800.
+div2_diff_efold=1.e30
+fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
+baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
+dont_update_unbal = True # if True, don't update unbal part, if None set unbal anal part to zero
+posterior_stats = False
+nassim = 800 # assimilation times to run
+nanals = 20 # ensemble members
+savedata = None # if not None, netcdf filename to save data.
+#savedata = True # filename given by exptname env var
+oberrstdev_zmid = 100.  # interface height ob error in meters
+#oberrstdev_zsfc = 10. # surface height ob error in meters
+#oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
+oberrstdev_zsfc = 1.e30 # surface height ob error in meters
+oberrstdev_wind = 1.e30 # don't assimilate winds
+# nature run created using twolayer_naturerun.py.
+filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model climo
+# perfect model
+#filename_truth = filename_climo
+filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
+ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
+
+profile = False # turn on profiling?
+
+print('# filename_modelclimo=%s' % filename_climo)
+print('# filename_truth=%s' % filename_truth)
+
 exptname = os.getenv('exptname','test')
 # get envar to set number of multiprocessing jobs for LETKF and ensemble forecast
 n_jobs = int(os.getenv('N_JOBS','0'))
 threads = 1
 
-diff_efold = None # use diffusion from climo file
-#div2_diff_efold=1800.
-div2_diff_efold=1.e30
-
-profile = False # turn on profiling?
-
-fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
-baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
-dont_update_unbal = False # if True, don't update unbal part, if None set unbal anal part to zero
-ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 if ivar == 0:
     nlevs_update = 4
 else:
     nlevs_update = 2
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
-posterior_stats = False
 precision = 'float32'
-savedata = None # if not None, netcdf filename to save data.
-#savedata = True # filename given by exptname env var
-nassim = 800 # assimilation times to run
-
-nanals = 20 # ensemble members
-
-oberrstdev_zmid = 100.  # interface height ob error in meters
-#oberrstdev_zsfc = 10. # surface height ob error in meters
-#oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
-oberrstdev_zsfc = 1.e30 # surface height ob error in meters
-oberrstdev_wind = 1.e30 # don't assimilate winds
-
-# nature run created using twolayer_naturerun.py.
-filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model climo
-# perfect model
-#filename_truth = filename_climo
-filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
-
-print('# filename_modelclimo=%s' % filename_climo)
-print('# filename_truth=%s' % filename_truth)
 
 # fix random seed for reproducibility.
 rsobs = np.random.RandomState(42) # fixed seed for observations
@@ -461,10 +459,13 @@ inflation_factor = np.ones((2,Nt,Nt))
 for ntime in range(nassim):
 
     if baldiv:
-        if ntime < 10:
+        # turn off balanced divergence and unbalanced update in spinup
+        if ntime < 100:
             baldiv2=False
+            dont_update_unbal2=False
         else:
             baldiv2=True
+            dont_update_unbal2=dont_update_unbal
 
     # check model clock
     if model.t != obtimes[ntime+ntstart]:
@@ -596,7 +597,7 @@ for ntime in range(nassim):
         for nanal in range(nanals):
             uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
 
-    if not dont_update_unbal: # otherwise don't update unbalanced part.
+    if not dont_update_unbal2: # otherwise don't update unbalanced part.
         # EnKF update for unbalanced part.
         xens = enstoctl(model,uens_unbal,vens_unbal,dzens_unbal,ivar=0)
         xensmean_b = xens.mean(axis=0)
@@ -631,7 +632,7 @@ for ntime in range(nassim):
 
         uens_unbal,vens_unbal,dzens_unbal = ctltoens(model,xens,ivar=0)
 
-    if dont_update_unbal is None:
+    if dont_update_unbal2 is None:
         # the unbalanced component of the analysis is set to zero
         uens = uens_bal
         vens = vens_bal
