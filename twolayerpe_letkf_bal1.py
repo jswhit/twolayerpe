@@ -68,7 +68,7 @@ else:
     nlevs_update = 2
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
-posterior_stats = False
+posterior_stats = True
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
@@ -528,13 +528,14 @@ for ntime in range(nassim):
         y_obs[ntime] = yob
 
     # prior stats.
-    vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b,ke_errav,ke_sprdav=getspreaderr(model,uens,vens,dzens,\
+    vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,\
+    zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m2_errav,m2_sprdav,ke_errav,ke_sprdav=\
+    getspreaderr(model,uens_mid,vens_mid,dzens_mid,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
     totmass = ((dzens[:,0,...]+dzens[:,1,...]).mean(axis=0)).mean()/1000.
-    print("%s %g %g %g %g %g %g %g %g %g %g %g %g %g" %\
-    (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,ke_errav,ke_sprdav,inflation_factor.mean(),masstend_diag,totmass))
+    print("%s %g %g %g %g %g %g %g %g %g %g %g %g  %g %g" %\
+    (ntime+ntstart,zmid_errav,zmid_sprdav,m2_errav,m2_sprdav,vecwind2_errav,vecwind2_sprdav,\
+     zsfc_errav,zsfc_sprdav,vecwind1_errav,vecwind1_sprdav,ke_errav,ke_sprdav,masstend_diag,totmass))
 
     # EnKF update for balanced part.
     xens = enstoctl(model,uens_bal,vens_bal,dzens_bal,ivar=ivar)
@@ -634,12 +635,15 @@ for ntime in range(nassim):
 
     # posterior stats
     if posterior_stats:
-        vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-        zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a,ke_errav,ke_sprdav=getspreaderr(model,uens,vens,dzens,\
+        vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,\
+        zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m2_errav,m2_sprdav,ke_errav,ke_sprdav=\
+        getspreaderr(model,uens_mid_a,vens_mid_a,dzens_mid_a,\
         u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-        print("%s %g %g %g %g %g %g %g %g %g %g" %\
-        (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-         zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a,ke_errav,ke_sprdav))
+        totmass = ((dzens_mid_a[:,0,...]+dzens_mid_a[:,1,...]).mean(axis=0)).mean()/1000.
+        print("%s %g %g %g %g %g %g %g %g %g %g %g %g %g %g" %\
+        (ntime+ntstart,zmid_errav,zmid_sprdav,m2_errav,m2_sprdav,vecwind2_errav,vecwind2_sprdav,\
+         zsfc_errav,zsfc_sprdav,vecwind1_errav,vecwind1_sprdav,ke_errav,ke_sprdav,masstend_diag,totmass))
+        raise SystemExit
 
     # save data.
     if savedata is not None:
