@@ -55,7 +55,7 @@ diff_efold = None # use diffusion from climo file
 div2_diff_efold=1.e30
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
 baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
-dont_update_unbal = True # if True, don't update unbal part, if None set unbal anal part to zero
+dont_update_unbal = False # if True, don't update unbal part, if None set unbal anal part to zero
 posterior_stats = False
 nassim = 800 # assimilation times to run
 nanals = 20 # ensemble members
@@ -458,14 +458,13 @@ masstend_diag = 0.
 inflation_factor = np.ones((2,Nt,Nt))
 for ntime in range(nassim):
 
-    if baldiv:
-        # turn off balanced divergence and unbalanced update in spinup
-        if ntime < 100:
-            baldiv2=False
-            dont_update_unbal2=False
-        else:
-            baldiv2=True
-            dont_update_unbal2=dont_update_unbal
+    # turn off balanced divergence and unbalanced update in spinup
+    if ntime < 100:
+        baldiv2=False
+        dont_update_unbal2=True
+    else:
+        baldiv2=baldiv
+        dont_update_unbal2=dont_update_unbal
 
     # check model clock
     if model.t != obtimes[ntime+ntstart]:
