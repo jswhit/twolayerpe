@@ -74,7 +74,7 @@ else:
 # experimental parameters.
 #div2_diff_efold=1800. # extra laplacian div diff (suppress gravity modes)
 div2_diff_efold=1.e30
-use_iau = True
+use_iau = False
 balvar = True
 dont_update_unbal=False # if balvar, dont update unbal var.
 fix_totmass = True # fix area mean dz in each layer.
@@ -597,7 +597,7 @@ for ntime in range(nassim):
             # posterior multiplicative inflation.
             xens = inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2)
             # back to 3d state vector
-            uens_a,vens_a,dzens_a = ctltoens(model,xens)
+            uens_a,vens_a,dzens_a = ctltoens(model,xens,fix_totmass=fix_totmass)
             uens_inc = uens_a-uens_b
             vens_inc = vens_a-vens_b
             dzens_inc = dzens_a-dzens_b
@@ -731,6 +731,10 @@ for ntime in range(nassim):
         results = Parallel(n_jobs=n_jobs)(delayed(run_model_iau)(uens_beg[nanal],vens_beg[nanal],dzens_beg[nanal],uens_inc[:,nanal,...],vens_inc[:,nanal,...],dzens_inc[:,nanal,...],wts_iau,N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+                dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
         uens_beg=uens.copy(); vens_beg=vens.copy(); dzens_beg=dzens.copy()
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         masstend_diag=0.
@@ -738,9 +742,17 @@ for ntime in range(nassim):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
             masstend_diag+=mtend/nanals
         uens_mid=uens.copy(); vens_mid=vens.copy(); dzens_mid=dzens.copy()
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+                dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens_mid[nanal],vens_mid[nanal],dzens_mid[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
+        if fix_totmass:
+            for nmem in range(nanals):
+                dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
+                dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
         uens_end=uens.copy(); vens_end=vens.copy(); dzens_end=dzens.copy()
         model.t = tstart + dt*assim_timesteps
         t2 = time.time()
