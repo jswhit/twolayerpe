@@ -113,8 +113,6 @@ class TwoLayer(object):
             elif div == True: # compute divergence, initialize iteration with div=0
                 divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
                 div = np.zeros(dz.shape, dz.dtype)
-        else: # compute divergence, assume initial estimate given by div kwarg
-            divspec = self.ft.grdtospec(div)
         dzx,dzy = self.ft.getgrad(dz)
         urot = self.ft.spectogrd(-self.ft.il*psispec); vrot = self.ft.spectogrd(self.ft.ik*psispec)
         vrt = self.ft.spectogrd(vrtspec)
@@ -145,7 +143,7 @@ class TwoLayer(object):
         # start iteration with div=0
         converged=False
         for niter in range(nitermax):
-            div = self.ft.spectogrd(divspec)
+            divspec = self.ft.grdtospec(div)
             chispec = self.ft.invlap*divspec
             udivspec = self.ft.ik*chispec; vdivspec = self.ft.il*chispec
             udiv = self.ft.spectogrd(udivspec); vdiv = self.ft.spectogrd(vdivspec)
