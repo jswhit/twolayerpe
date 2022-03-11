@@ -53,7 +53,7 @@ diff_efold = None # use diffusion from climo file
 #div2_diff_efold=1800.
 div2_diff_efold=1.e30
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
-baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
+baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
 dont_update_unbal = False # if True, don't update unbal part, if None set unbal anal part to zero
 posterior_stats = False
 nassim = 800 # assimilation times to run
@@ -357,16 +357,16 @@ def balens(model,uens,vens,dzens,baldiv=False,nitermax=1000,divguess=True,relax=
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
         vrt = model.ft.spectogrd(vrtspec)
         if divguess==True:
-            div = divspec # use calculated div as initial guess
+            div = model.ft.spectogrd(divspec) # use calculated div as initial guess
         elif divguess==False:
-            div = None # use zeros as initial guess
+            div = True # use zeros as initial guess
         else:
             div = False # don't compute balanced div
         dz1mean = dzens[nmem,...][0].mean()
         dz2mean = dzens[nmem,...][1].mean()
-        dzbal, divbal = model.nlbalance(vrtspec,divspec=div,dz1mean=dz1mean,dz2mean=dz2mean,\
+        dzbal, divbal = model.nlbalance(vrtspec,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
                         nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-        if divguess is None:
+        if div == False:
             # no balanced divergence (much faster)
             divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         else:
@@ -386,16 +386,16 @@ def balmem(N,L,dt,umem,vmem,dzmem,baldiv=False,divguess=True,nitermax=1000,relax
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
     vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
     if divguess==True:
-        div = divspec # use calculated div as initial guess
+        div = model.ft.spectogrd(divspec) # use calculated div as initial guess
     elif divguess==False:
-        div = None # use zeros as initial guess
+        div = True # use zeros as initial guess
     else:
         div = False # don't compute balanced div
     dz1mean = dzmem[0].mean()
     dz2mean = dzmem[1].mean()
-    dzbal, divbal = model.nlbalance(vrtspec,divspec=div,dz1mean=dz1mean,dz2mean=dz2mean,\
+    dzbal, divbal = model.nlbalance(vrtspec,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
                     nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-    if divguess is None:
+    if div == False:
         # no balanced divergence (much faster)
         divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     else:
