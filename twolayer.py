@@ -77,7 +77,7 @@ class TwoLayer(object):
 
         psixx = self.ft.spectogrd(-self.ft.k**2*psispec)
         psiyy = self.ft.spectogrd(-self.ft.l**2*psispec)
-        psixy = self.ft.spectogrd(self.ft.k*self.ft.l*psispec)
+        psixy = self.ft.spectogrd(-self.ft.k*self.ft.l*psispec)
 
         tmpspec = self.f*vrtspec + 2.*self.ft.grdtospec(psixx*psiyy - psixy**2)
         mspec = self.ft.invlap*tmpspec
@@ -121,7 +121,7 @@ class TwoLayer(object):
             dpsispecdt = self.ft.invlap*dvrtspecdt
             dpsixxdt = self.ft.spectogrd(-self.ft.k**2*dpsispecdt)
             dpsiyydt = dvrtdt - dpsixxdt
-            dpsixydt = self.ft.spectogrd(self.ft.k*self.ft.l*dpsispecdt)
+            dpsixydt = self.ft.spectogrd(-self.ft.k*self.ft.l*dpsispecdt)
             tmpspec = self.f*dvrtspecdt + 2.*self.ft.grdtospec(dpsixxdt*psiyy + psixx*dpsiyydt - 2*psixy*dpsixydt)
             mspec = self.ft.invlap*tmpspec
             dzspec = np.zeros(mspec.shape, mspec.dtype)
