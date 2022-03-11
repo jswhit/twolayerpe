@@ -370,7 +370,7 @@ def balens(model,uens,vens,dzens):
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
         dz1mean = dzens[nmem,...][0].mean()
         dz2mean = dzens[nmem,...][1].mean()
-        dzbal = model.nlbalance(vrtspec,dz1mean=dz1mean,dz2mean=dz2mean)
+        dzbal,divbal = model.nlbalance(vrtspec,dz1mean=dz1mean,dz2mean=dz2mean)
         divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         uens_bal[nmem], vens_bal[nmem] = model.ft.getuv(vrtspec,divspec)
         dzens_bal[nmem] = dzbal
@@ -385,7 +385,7 @@ def balmem(N,L,dt,umem,vmem,dzmem,\
     vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
     dz1mean = dzmem[0].mean()
     dz2mean = dzmem[1].mean()
-    dzbal = model.nlbalance(vrtspec,dz1mean=dz1mean,dz2mean=dz2mean)
+    dzbal,divbal = model.nlbalance(vrtspec,dz1mean=dz1mean,dz2mean=dz2mean)
     divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     ubal, vbal = model.ft.getuv(vrtspec,divspec)
     return ubal,vbal,dzbal
