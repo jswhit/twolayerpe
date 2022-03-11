@@ -366,7 +366,7 @@ def balens(model,uens,vens,dzens,baldiv=False,nitermax=1000,divguess=True,relax=
         dz2mean = dzens[nmem,...][1].mean()
         dzbal, divbal = model.nlbalance(vrtspec,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
                         nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-        if div == False:
+        if type(div) == bool and div == False:
             # no balanced divergence (much faster)
             divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         else:
@@ -395,7 +395,7 @@ def balmem(N,L,dt,umem,vmem,dzmem,baldiv=False,divguess=True,nitermax=1000,relax
     dz2mean = dzmem[1].mean()
     dzbal, divbal = model.nlbalance(vrtspec,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
                     nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-    if div == False:
+    if type(div) == bool and div == False:
         # no balanced divergence (much faster)
         divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     else:
