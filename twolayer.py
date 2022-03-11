@@ -82,24 +82,21 @@ class TwoLayer(object):
         tmpspec = self.f*vrtspec + 2.*self.ft.grdtospec(psixx*psiyy - psixy**2)
         mspec = self.ft.invlap*tmpspec
         dzspec = np.zeros(mspec.shape, mspec.dtype)
-        dzspec[0,...] = mspec[0,...]/self.theta1
-        dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(self.theta2-self.theta1)
-        dzspec[0,...] -= dzspec[1,...]
-        dzspec = (self.theta1/self.grav)*dzspec # convert from exner function to height units (m)
 
+        # alternate form of NBE
         #divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
-        #dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         #vrt = self.ft.spectogrd(vrtspec)
         #u,v = self.ft.getuv(vrtspec,divspec)
         #tmpg1 = u*(vrt+self.f); tmpg2 = v*(vrt+self.f)
         #tmpspec1, tmpspec2 = self.ft.getvrtdivspec(tmpg1,tmpg2)
         #tmpspec2 = self.ft.grdtospec(0.5*(u**2+v**2))
         #mspec = self.ft.invlap*tmpspec1 - tmpspec2
-        #dzspec[0,...] = mspec[0,...]/self.theta1
-        ##(mspec[0,...]-self.ft.grdtospec(self.grav*self.orog))/self.theta1 # with orography
-        #dzspec[1,...] = (mspec[1,:]-mspec[0,...])/self.delth
-        #dzspec[0,...] = dzspec[0,...] - dzspec[1,...]
-        #dzspec = (self.theta1/self.grav)*dzspec # convert from exner function to height units (m)
+
+        dzspec[0,...] = mspec[0,...]/self.theta1
+        #(mspec[0,...]-self.ft.grdtospec(self.grav*self.orog))/self.theta1 # with orography
+        dzspec[1,...] = (mspec[1,:]-mspec[0,...])/self.delth
+        dzspec[0,...] = dzspec[0,...] - dzspec[1,...]
+        dzspec = (self.theta1/self.grav)*dzspec # convert from exner function to height units (m)
 
         # set area mean in grid space to state of rest value
         dz = self.ft.spectogrd(dzspec)
@@ -119,7 +116,7 @@ class TwoLayer(object):
 
         def nlbalance_tend(dvrtdt):
             # solve tendency of nonlinear balance eqn to get layer thickness tendency
-            # given vorticity tendency (psixx,psiyy and psixy already computed)
+            # given vorticity tendency (psixx,psiyy,psixy already computed)
             dvrtspecdt = self.ft.grdtospec(dvrtdt)
             dpsispecdt = self.ft.invlap*dvrtspecdt
             dpsixxdt = self.ft.spectogrd(-self.ft.k**2*dpsispecdt)
