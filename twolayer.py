@@ -61,32 +61,48 @@ class TwoLayer(object):
         vrtspec, divspec = self.ft.getvrtdivspec(ug,vg)
         ug,vg = self.ft.getuv(vrtspec,divspec)
         self.uref = ug
-        dzspec = self.nlbalance(vrtspec)
-        self.dzref = self.ft.spectogrd(dzspec)
+        self.dzref = self.nlbalance(vrtspec)
         if self.dzref.min() < 0:
             raise ValueError('negative layer thickness! adjust equilibrium jet parameter')
 
-    def nlbalance(self,vrtspec):
-        # solve nonlinear balance eqn to get layer thickness given vorticity.
-        divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
-        dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
-        vrtg = self.ft.spectogrd(vrtspec)
-        ug,vg = self.ft.getuv(vrtspec,divspec)
-        tmpg1 = ug*(vrtg+self.f); tmpg2 = vg*(vrtg+self.f)
-        tmpspec1, tmpspec2 = self.ft.getvrtdivspec(tmpg1,tmpg2)
-        tmpspec2 = self.ft.grdtospec(0.5*(ug**2+vg**2))
-        mspec = self.ft.invlap*tmpspec1 - tmpspec2
+    def nlbalance(self,vrtspec,dz1mean=None, dz2mean=None):
+        """computes balanced layer thickness given vorticity (from nonlinear bal eqn)"""
+        if dz1mean is None: 
+            dz1mean = self.zmid
+        if dz2mean is None:
+            dz2mean = self.ztop - self.zmid
+
+        psispec = self.ft.invlap*vrtspec
+        psixx = self.ft.spectogrd(-self.ft.k**2*psispec)
+        psiyy = self.ft.spectogrd(-self.ft.l**2*psispec)
+        psixy = self.ft.spectogrd(-self.ft.k*self.ft.l*psispec)
+        tmpspec = self.f*vrtspec + 2.*self.ft.grdtospec(psixx*psiyy - psixy**2)
+        mspec = self.ft.invlap*tmpspec
+        dzspec = np.zeros(mspec.shape, mspec.dtype)
         dzspec[0,...] = mspec[0,...]/self.theta1
-        #(mspec[0,...]-self.ft.grdtospec(self.grav*self.orog))/self.theta1 # with orography
-        dzspec[1,...] = (mspec[1,:]-mspec[0,...])/self.delth
-        dzspec[0,...] = dzspec[0,...] - dzspec[1,...]
+        dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(self.theta2-self.theta1)
+        dzspec[0,...] -= dzspec[1,...]
         dzspec = (self.theta1/self.grav)*dzspec # convert from exner function to height units (m)
+
+        #divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+        #dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+        #vrtg = self.ft.spectogrd(vrtspec)
+        #ug,vg = self.ft.getuv(vrtspec,divspec)
+        #tmpg1 = ug*(vrtg+self.f); tmpg2 = vg*(vrtg+self.f)
+        #tmpspec1, tmpspec2 = self.ft.getvrtdivspec(tmpg1,tmpg2)
+        #tmpspec2 = self.ft.grdtospec(0.5*(ug**2+vg**2))
+        #mspec = self.ft.invlap*tmpspec1 - tmpspec2
+        #dzspec[0,...] = mspec[0,...]/self.theta1
+        ##(mspec[0,...]-self.ft.grdtospec(self.grav*self.orog))/self.theta1 # with orography
+        #dzspec[1,...] = (mspec[1,:]-mspec[0,...])/self.delth
+        #dzspec[0,...] = dzspec[0,...] - dzspec[1,...]
+        #dzspec = (self.theta1/self.grav)*dzspec # convert from exner function to height units (m)
+
         # set area mean in grid space to state of rest value
-        dzg = self.ft.spectogrd(dzspec)
-        dzg[0,...] = dzg[0,...] - dzg[0,...].mean() + self.zmid
-        dzg[1,...] = dzg[1,...] - dzg[1,...].mean() + self.ztop - self.zmid
-        dzspec = self.ft.grdtospec(dzg)
-        return dzspec
+        dz = self.ft.spectogrd(dzspec)
+        dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
+        dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
+        return dz
 
     def gettend(self,vrtspec,divspec,dzspec):
         # compute tendencies.
@@ -205,6 +221,23 @@ def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_ef
     u, v = ft.getuv(vrtspec,divspec)
     dz = ft.spectogrd(dzspec)
     return u,v,dz,model.masstendvar
+
+def run_model4d(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
+                zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
+    ft = Fouriert(N,L,threads=1)
+    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
+    vrtspec, divspec = ft.getvrtdivspec(u,v)
+    dzspec = ft.grdtospec(dz)
+    uout = np.empty((timesteps,)+u.shape,u.dtype)
+    vout = np.empty((timesteps,)+v.shape,v.dtype)
+    dzout = np.empty((timesteps,)+dz.shape,dz.dtype)
+    for n in range(timesteps):
+        vrtspec, divspec, dzspec = model.rk4step(vrtspec,divspec,dzspec)
+        u, v = ft.getuv(vrtspec,divspec)
+        dz = ft.spectogrd(dzspec)
+        uout[n] = u; vout[n] = v; dzout[n] = dz
+    return uout,vout,dzout,model.masstendvar
 
 def run_model_iau(u,v,dz,uinc,vinc,dzinc,wts,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
               zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
