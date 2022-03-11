@@ -53,19 +53,20 @@ class TwoLayer(object):
         self.masstendvar = 0
 
     def _interface_profile(self,umax):
-        ug = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=self.dtype)
-        vg = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=self.dtype)
+        u = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=self.dtype)
+        v = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=self.dtype)
         l = np.array(2*np.pi,self.dtype) / self.ft.L
-        ug[1] = umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
-        uspec = self.ft.grdtospec(ug)
-        vrtspec, divspec = self.ft.getvrtdivspec(ug,vg)
-        ug,vg = self.ft.getuv(vrtspec,divspec)
-        self.uref = ug
-        self.dzref = self.nlbalance(vrtspec)
+        u[1] = umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
+        uspec = self.ft.grdtospec(u)
+        vrtspec, divspec = self.ft.getvrtdivspec(u,v)
+        u,v = self.ft.getuv(vrtspec,divspec)
+        self.uref = u
+        self.dzref, div = self.nlbalance(vrtspec)
         if self.dzref.min() < 0:
             raise ValueError('negative layer thickness! adjust equilibrium jet parameter')
 
-    def nlbalance(self,vrtspec,dz1mean=None, dz2mean=None):
+    def nlbalance(self,vrtspec,divspec=False, dz1mean=None, dz2mean=None, nitermax=1000,\
+                  relax=0.01, eps=1.e-2, verbose=False):
         """computes balanced layer thickness given vorticity (from nonlinear bal eqn)"""
         if dz1mean is None: 
             dz1mean = self.zmid
@@ -86,11 +87,11 @@ class TwoLayer(object):
 
         #divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         #dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
-        #vrtg = self.ft.spectogrd(vrtspec)
-        #ug,vg = self.ft.getuv(vrtspec,divspec)
-        #tmpg1 = ug*(vrtg+self.f); tmpg2 = vg*(vrtg+self.f)
+        #vrt = self.ft.spectogrd(vrtspec)
+        #u,v = self.ft.getuv(vrtspec,divspec)
+        #tmpg1 = u*(vrt+self.f); tmpg2 = v*(vrt+self.f)
         #tmpspec1, tmpspec2 = self.ft.getvrtdivspec(tmpg1,tmpg2)
-        #tmpspec2 = self.ft.grdtospec(0.5*(ug**2+vg**2))
+        #tmpspec2 = self.ft.grdtospec(0.5*(u**2+v**2))
         #mspec = self.ft.invlap*tmpspec1 - tmpspec2
         #dzspec[0,...] = mspec[0,...]/self.theta1
         ##(mspec[0,...]-self.ft.grdtospec(self.grav*self.orog))/self.theta1 # with orography
@@ -102,43 +103,124 @@ class TwoLayer(object):
         dz = self.ft.spectogrd(dzspec)
         dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
         dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
-        return dz
+
+        if type(divspec) == bool and divspec == False: # don't compute balanced divergence
+            div = np.zeros(dz.shape, dz.dtype)
+            return dz,div
+        dzx,dzy = model.ft.getgrad(dz)
+        urot = model.ft.spectogrd(-model.ft.il*psispec); vrot = model.ft.spectogrd(model.ft.ik*psispec)
+
+        def nlbalance_tend(dvrtdt):
+            # solve tendency of nonlinear balance eqn to get layer thickness tendency
+            # given vorticity tendency (psixx,psiyy and psixy already computed)
+            dvrtspecdt = model.ft.grdtospec(dvrtdt)
+            dpsispecdt = model.ft.invlap*dvrtspecdt
+            dpsixxdt = model.ft.spectogrd(-model.ft.k**2*dpsispecdt)
+            dpsiyydt = dvrtdt - dpsixxdt
+            dpsixydt = model.ft.spectogrd(-model.ft.k*model.ft.l*dpsispecdt)
+            tmpspec = model.f*dvrtspecdt + 2.*model.ft.grdtospec(dpsixxdt*psiyy + psixx*dpsiyydt - 2*psixy*dpsixydt)
+            mspec = model.ft.invlap*tmpspec
+            dzspec = np.zeros(mspec.shape, mspec.dtype)
+            dzspec[0,...] = mspec[0,...]/model.theta1
+            dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(model.theta2-model.theta1)
+            dzspec[0,...] -= dzspec[1,...]
+            dzspec = (model.theta1/model.grav)*dzspec # convert from exner function to height units (m)
+            ddzdt = model.ft.spectogrd(dzspec)
+            # remove area mean
+            ddzdt[0,...] = ddzdt[0,...] - ddzdt[0,...].mean()
+            ddzdt[1,...] = ddzdt[1,...] - ddzdt[1,...].mean()
+            return ddzdt
+
+        # get balanced divergence computed iterative algorithm
+        # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
+        # start iteration with div=0
+        if divspec is None: # no specified initial estimate, initialize with zero
+             div = np.zeros(vrt.shape, vrt.dtype)
+        converged=False
+        for niter in range(nitermax):
+            chispec = model.ft.invlap*divspec
+            udivspec = model.ft.ik*chispec; vdivspec = model.ft.il*chispec
+            udiv = model.ft.spectogrd(udivspec); vdiv = model.ft.spectogrd(vdivspec)
+            u = urot+udiv; v = vrot+vdiv
+            # compute initial guess of vorticity tendency 
+            # first, transform fields from spectral space to grid space.
+            # diabatic mass flux due to interface relaxation.
+            massflux = (model.dzref[1] - dz[1])/model.tdiab
+            # horizontal vorticity flux
+            tmp1 = u*(vrt+model.f); tmp2 = v*(vrt+model.f)
+            # add lower layer drag contribution
+            tmp1[0] += v[0]/model.tdrag
+            tmp2[0] += -u[0]/model.tdrag
+            # add diabatic momentum flux contribution
+            # (this version averages vertical flux at top
+            # and bottom of each layer)
+            # same as 'improved' mc2RSW model (DOI: 10.1002/qj.3292)
+            tmp1 += 0.5*(v[1]-v[0])*massflux/dz
+            tmp2 -= 0.5*(u[1]-u[0])*massflux/dz
+            # compute vort flux contributions to vorticity and divergence tend.
+            ddivdtspec, dvrtdtspec = model.ft.getvrtdivspec(tmp1,tmp2)
+            dvrtdtspec *= -1
+            dvrtdtspec += model.hyperdiff*vrtspec
+            dvrtdt = model.ft.spectogrd(dvrtdtspec)
+            # infer layer thickness tendency from d/dt of balance eqn.
+            ddzdt = nlbalance_tend(dvrtdt)
+            # new estimate of divergence from continuity eqn
+            tmp1[0] = massflux; tmp1[1] = -massflux
+            divnew = -(1./dz)*(ddzdt + u*dzx + v*dzy - tmp1)
+            divnew = divnew - divnew.mean() # remove area mean
+            divdiff = divnew-div
+            div = div + relax*divdiff
+            divdiffmean = np.sqrt((divdiff**2).mean())
+            divmean = np.sqrt((div**2).mean())
+            if verbose: print(niter, divdiffmean, divdiffmean/divmean )
+            if divdiffmean/divmean < eps:    
+                converged = True
+                break
+            divspec = model.ft.grdtospec(div)
+        if not converged:
+            raise RuntimeError('balanced divergence solution did not converge')
+
+        # remove area mean div 
+        div[0]=div[0]-div[0].mean()
+        div[1]=div[1]-div[1].mean()
+
+        return dz,div
 
     def gettend(self,vrtspec,divspec,dzspec):
         # compute tendencies.
         # first, transform fields from spectral space to grid space.
-        vrtg = self.ft.spectogrd(vrtspec)
-        ug,vg = self.ft.getuv(vrtspec,divspec)
-        dzg = self.ft.spectogrd(dzspec)
+        vrt = self.ft.spectogrd(vrtspec)
+        u,v = self.ft.getuv(vrtspec,divspec)
+        dz = self.ft.spectogrd(dzspec)
         # diabatic mass flux due to interface relaxation.
-        massflux = (self.dzref[1] - dzg[1])/self.tdiab
+        massflux = (self.dzref[1] - dz[1])/self.tdiab
         # horizontal vorticity flux
-        tmpg1 = ug*(vrtg+self.f); tmpg2 = vg*(vrtg+self.f)
+        tmpg1 = u*(vrt+self.f); tmpg2 = v*(vrt+self.f)
         # add lower layer drag contribution
-        tmpg1[0] += vg[0]/self.tdrag
-        tmpg2[0] += -ug[0]/self.tdrag
+        tmpg1[0] += v[0]/self.tdrag
+        tmpg2[0] += -u[0]/self.tdrag
         # add diabatic momentum flux contribution
         # (this version averages vertical flux at top
         # and bottom of each layer)
         # same as 'improved' mc2RSW model (DOI: 10.1002/qj.3292)
-        tmpg1 += 0.5*(vg[1]-vg[0])*massflux/dzg
-        tmpg2 -= 0.5*(ug[1]-ug[0])*massflux/dzg
+        tmpg1 += 0.5*(v[1]-v[0])*massflux/dz
+        tmpg2 -= 0.5*(u[1]-u[0])*massflux/dz
         # compute vort flux contributions to vorticity and divergence tend.
         ddivdtspec, dvrtdtspec = self.ft.getvrtdivspec(tmpg1,tmpg2)
         dvrtdtspec *= -1
         # horizontal mass flux contribution to continuity
-        tmpg1 = ug*dzg; tmpg2 = vg*dzg
+        tmpg1 = u*dz; tmpg2 = v*dz
         tmpspec, ddzdtspec = self.ft.getvrtdivspec(tmpg1,tmpg2)
         ddzdtspec *= -1
         # diabatic mass flux contribution to continuity
         tmpspec = self.ft.grdtospec(massflux)
         ddzdtspec[0] -= tmpspec; ddzdtspec[1] += tmpspec
         # pressure gradient force contribution to divergence tend
-        mstrm = np.empty(dzg.shape, dtype=self.dtype) # montgomery streamfunction
-        #mstrm[0] = self.grav*(self.orog + dzg[0] + dzg[1]) # with orography
-        mstrm[0] = self.grav*(dzg[0] + dzg[1])
-        mstrm[1] = mstrm[0] + (self.grav*self.delth/self.theta1)*dzg[1]
-        ddivdtspec += -self.ft.lap*self.ft.grdtospec(mstrm+0.5*(ug**2+vg**2))
+        mstrm = np.empty(dz.shape, dtype=self.dtype) # montgomery streamfunction
+        #mstrm[0] = self.grav*(self.orog + dz[0] + dz[1]) # with orography
+        mstrm[0] = self.grav*(dz[0] + dz[1])
+        mstrm[1] = mstrm[0] + (self.grav*self.delth/self.theta1)*dz[1]
+        ddivdtspec += -self.ft.lap*self.ft.grdtospec(mstrm+0.5*(u**2+v**2))
         # hyperdiffusion of vorticity and divergence
         dvrtdtspec += self.hyperdiff*vrtspec
         # extra laplacian diffusion of divergence to suppress gravity waves
@@ -202,9 +284,9 @@ class TwoLayer(object):
         for n in range(self.timesteps):
             vrtspec, divspec, dzspec = self.rk4step(vrtspec,divspec,dzspec)
         if grid:
-            ug, vg = self.ft.getuv(vrtspec,divspec)
-            dzg = self.ft.spectogrd(dzspec)
-            return ug,vg,dzg
+            u, v = self.ft.getuv(vrtspec,divspec)
+            dz = self.ft.spectogrd(dzspec)
+            return u,v,dz
         else:
             return vrtspec, divspec, dzspec
 
@@ -286,21 +368,21 @@ if __name__ == "__main__":
     dtype = model.dtype
     vref = np.zeros(model.uref.shape, model.uref.dtype)
     vrtspec, divspec = model.ft.getvrtdivspec(model.uref, vref)
-    vrtg = model.ft.spectogrd(vrtspec)
-    vrtg += np.random.normal(0,2.e-6,size=(2,ft.Nt,ft.Nt)).astype(dtype)
+    vrt = model.ft.spectogrd(vrtspec)
+    vrt += np.random.normal(0,2.e-6,size=(2,ft.Nt,ft.Nt)).astype(dtype)
     # add isolated blob to upper layer
     nexp = 20
     x = np.arange(0,2.*np.pi,2.*np.pi/ft.Nt); y = np.arange(0.,2.*np.pi,2.*np.pi/ft.Nt)
     x,y = np.meshgrid(x,y)
     x = x.astype(dtype); y = y.astype(dtype)
-    vrtg[1] = vrtg[1]+2.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
-    vrtspec = model.ft.grdtospec(vrtg)
+    vrt[1] = vrt[1]+2.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
+    vrtspec = model.ft.grdtospec(vrt)
     divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     dzspec = model.nlbalance(vrtspec)
-    dzg = model.ft.spectogrd(dzspec)
-    ug,vg = model.ft.getuv(vrtspec,divspec)
-    vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
-    if dzg.min() < 0:
+    dz = model.ft.spectogrd(dzspec)
+    u,v = model.ft.getuv(vrtspec,divspec)
+    vrtspec, divspec = model.ft.getvrtdivspec(u,v)
+    if dz.min() < 0:
         raise ValueError('negative layer thickness! adjust jet parameters')
 
     # run model, animate pv
@@ -309,7 +391,7 @@ if __name__ == "__main__":
 
     fig = plt.figure(figsize=(16,8))
     ax = fig.add_subplot(121); ax.axis('off')
-    pv = (0.5*model.zmid/model.f)*(vrtg + model.f)/dzg
+    pv = (0.5*model.zmid/model.f)*(vrt + model.f)/dz
     vmin = 0; vmax = 1.75 
     plt.tight_layout()
     im1=ax.imshow(pv[0],cmap=plt.cm.jet,vmin=vmin,vmax=vmax,interpolation="nearest")
@@ -327,9 +409,9 @@ if __name__ == "__main__":
         for n in range(nout):
             vrtspec, divspec, dzspec = model.rk4step(vrtspec, divspec,\
                     dzspec)
-        vrtg = model.ft.spectogrd(vrtspec)
-        dzg = model.ft.spectogrd(dzspec)
-        pv = (0.5*model.zmid/model.f)*(vrtg + model.f)/dzg
+        vrt = model.ft.spectogrd(vrtspec)
+        dz = model.ft.spectogrd(dzspec)
+        pv = (0.5*model.zmid/model.f)*(vrt + model.f)/dz
         td = model.t/86400.
         im1.set_data(pv[0])
         txt1.set_text('Lower Layer PV day %7.3f' % td)

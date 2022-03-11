@@ -4,7 +4,6 @@ import sys, time, os
 from twolayer import TwoLayer, run_model
 from pyfft import Fouriert
 from enkf_utils import cartdist,letkfwts_compute,gaspcohn
-from nlbal_utils import getbal
 from joblib import Parallel, delayed
 
 # LETKF cycling for two-layer pe turbulence model with interface height obs.
@@ -54,7 +53,7 @@ diff_efold = None # use diffusion from climo file
 #div2_diff_efold=1800.
 div2_diff_efold=1.e30
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
-baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
+baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
 dont_update_unbal = False # if True, don't update unbal part, if None set unbal anal part to zero
 posterior_stats = False
 nassim = 800 # assimilation times to run
@@ -358,15 +357,15 @@ def balens(model,uens,vens,dzens,baldiv=False,nitermax=1000,divguess=True,relax=
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
         vrt = model.ft.spectogrd(vrtspec)
         if divguess==True:
-            div = model.ft.spectogrd(divspec) # use calculated div as initial guess
+            div = divspec # use calculated div as initial guess
         elif divguess==False:
             div = None # use zeros as initial guess
         else:
             div = False # don't compute balanced div
         dz1mean = dzens[nmem,...][0].mean()
         dz2mean = dzens[nmem,...][1].mean()
-        dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
-                        adiab=False,nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+        dzbal, divbal = model.nlbalance(vrtspec,divspec=div,dz1mean=dz1mean,dz2mean=dz2mean,\
+                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
         if divguess is None:
             # no balanced divergence (much faster)
             divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
@@ -386,17 +385,16 @@ def balmem(N,L,dt,umem,vmem,dzmem,baldiv=False,divguess=True,nitermax=1000,relax
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
     vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
-    vrt = ft.spectogrd(vrtspec)
     if divguess==True:
-        div = model.ft.spectogrd(divspec) # use calculated div as initial guess
+        div = divspec # use calculated div as initial guess
     elif divguess==False:
         div = None # use zeros as initial guess
     else:
         div = False # don't compute balanced div
     dz1mean = dzmem[0].mean()
     dz2mean = dzmem[1].mean()
-    dzbal, divbal = getbal(model,vrt,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
-                    adiab=False,nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+    dzbal, divbal = model.nlbalance(vrtspec,divspec=div,dz1mean=dz1mean,dz2mean=dz2mean,\
+                    nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
     if divguess is None:
         # no balanced divergence (much faster)
         divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
@@ -454,8 +452,30 @@ def ctltoens(model,xens,ivar=0):
     dzens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     return uens,vens,dzens
 
+def inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2):
+    nanals = xens.shape[0]
+    xensmean_a = xens.mean(axis=0)
+    xprime = xens-xensmean_a
+    asprd = (xprime**2).sum(axis=0)/(nanals-1)
+    if covinflate2 < 0:
+        # relaxation to prior stdev (Whitaker & Hamill 2012)
+        asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
+        inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
+    else:
+        # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
+        # model, linear gaussian scenario)
+        # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
+        inc = xensmean_a - xensmean_b
+        inflation_factor = covinflate1*asprd + \
+        (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
+        inflation_factor = np.sqrt(inflation_factor/asprd)
+    #inflation_factor = np.where(inflation_factor < 1, 1. inflation_factor)
+    #print(inflation_factor.min(), inflation_factor.max(), inflation_factor.mean())
+    xprime = xprime*inflation_factor
+    xens = xprime + xensmean_a
+    return xens
+
 masstend_diag = 0.
-inflation_factor = np.ones((2,Nt,Nt))
 for ntime in range(nassim):
 
     # turn off balanced divergence and unbalanced update in spinup
@@ -563,28 +583,9 @@ for ntime in range(nassim):
                 xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
         t2 = time.time()
         if profile: print('cpu time for EnKF update',t2-t1)
-        xensmean_a = xens.mean(axis=0)
-        xprime = xens-xensmean_a
-        asprd = (xprime**2).sum(axis=0)/(nanals-1)
-        if covinflate2 < 0:
-            # relaxation to prior stdev (Whitaker & Hamill 2012)
-            asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
-            inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
-        else:
-            # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
-            # model, linear gaussian scenario)
-            # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
-            inc = xensmean_a - xensmean_b
-            inflation_factor = covinflate1*asprd + \
-            (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
-            inflation_factor = np.sqrt(inflation_factor/asprd)
-        xprime = xprime*inflation_factor
-        xens = xprime + xensmean_a
+        xens = inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2)
 
     uens_bal,vens_bal,dzens_bal = ctltoens(model,xens,ivar=ivar)
-    #uens_bal[:] = xens[:,0:2,:].reshape((nanals,2,Nt,Nt))
-    #vens_bal[:] = xens[:,2:4,:].reshape((nanals,2,Nt,Nt))
-    #dzens_bal[:] = xens[:,4:6,:].reshape((nanals,2,Nt,Nt))
 
     # balance 'balanced' analysis ensemble
     if n_jobs == 0:
@@ -611,23 +612,7 @@ for ntime in range(nassim):
                     xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
             t2 = time.time()
             if profile: print('cpu time for EnKF update',t2-t1)
-            xensmean_a = xens.mean(axis=0)
-            xprime = xens-xensmean_a
-            asprd = (xprime**2).sum(axis=0)/(nanals-1)
-            if covinflate2 < 0:
-                # relaxation to prior stdev (Whitaker & Hamill 2012)
-                asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
-                inflation_factoru = 1.+covinflate1*(fsprd-asprd)/asprd
-            else:
-                # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
-                # model, linear gaussian scenario)
-                # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
-                inc = xensmean_a - xensmean_b
-                inflation_factoru = covinflate1*asprd + \
-                (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
-                inflation_factoru = np.sqrt(inflation_factoru/asprd)
-            xprime = xprime*inflation_factoru
-            xens = xprime + xensmean_a
+            xens = inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2)
 
         uens_unbal,vens_unbal,dzens_unbal = ctltoens(model,xens,ivar=0)
 
