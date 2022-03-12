@@ -207,12 +207,12 @@ class TwoLayer(object):
         """computes balanced layer thickness and streamfunction given potential vorticity."""
         if dz1mean is None:
             if dzin is None:
-                dz1mean = model.zmid
+                dz1mean = self.zmid
             else:
                 dz1mean = dzin[0].mean()
         if dz2mean is None:
             if dzin is None:
-                dz2mean = model.ztop - model.zmid
+                dz2mean = self.ztop - self.zmid
             else:
                 dz2mean = dzin[1].mean()
         if dzin is None:
@@ -229,7 +229,7 @@ class TwoLayer(object):
             vrtspec = self.ft.grdtospec(vrt)
             dzprev = dz.copy()
             dz,div = self.nlbalance(vrtspec,div=False, dz1mean=0., dz2mean=0.)
-            ## solve nonlinear balance equation to get next estimate of dz
+            # solve nonlinear balance equation to get next estimate of dz
             #psispec = self.ft.invlap*vrtspec
             #psixx = self.ft.spectogrd(-self.ft.k**2*psispec)
             #psiyy = vrt - psixx
