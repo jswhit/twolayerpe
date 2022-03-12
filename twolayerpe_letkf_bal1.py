@@ -53,8 +53,8 @@ diff_efold = None # use diffusion from climo file
 #div2_diff_efold=1800.
 div2_diff_efold=1.e30
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
-baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
-dont_update_unbal = False # if True, don't update unbal part, if None set unbal anal part to zero
+baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
+dont_update_unbal = True # if True, don't update unbal part, if None set unbal anal part to zero
 posterior_stats = False
 nassim = 800 # assimilation times to run
 nanals = 20 # ensemble members
@@ -70,7 +70,7 @@ filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model cli
 # perfect model
 #filename_truth = filename_climo
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
-ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
+ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi, 3 for pv,div
 pvbal = True # define balance in terms of PV instead of vorticity
 
 profile = False # turn on profiling?
@@ -356,10 +356,6 @@ def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4
     pv = (vrt + model.f)/dzmem
     dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dzmem,nodiv=nodiv,\
                             nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-    #dz1mean = dzmem[0,...].mean()
-    #dz2mean = dzmem[1,...].mean()
-    #dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=None,dz1mean=dz1mean,dz2mean=dz2mean,nodiv=nodiv,\
-    #                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
     vrtspec = ft.grdtospec(vrtbal)
     if nodiv:
         # no balanced divergence.
@@ -369,7 +365,7 @@ def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4
     ubal, vbal = ft.getuv(vrtspec,divspec)
     return ubal,vbal,dzbal
 
-def balens(model,uens,vens,dzens,pvbal=False,baldiv=False,nitermax=1000,divguess=True,relax=0.01,eps=1.e-2,verbose=False):
+def balens(model,uens,vens,dzens,pvbal=False,baldiv=False,nitermax=1000,divguess=True,relax=0.015,eps=1.e-4,verbose=False):
     if not baldiv:
         # balanced div assumed zero
         divguess=None
@@ -409,7 +405,7 @@ def balens(model,uens,vens,dzens,pvbal=False,baldiv=False,nitermax=1000,divguess
         dzens_bal[nmem] = dzbal
     return uens_bal,vens_bal,dzens_bal
 
-def balmem(N,L,dt,umem,vmem,dzmem,pvbal=False,baldiv=False,divguess=True,nitermax=1000,relax=0.01,eps=1.e-2,verbose=False,\
+def balmem(N,L,dt,umem,vmem,dzmem,pvbal=False,baldiv=False,divguess=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
            theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
            zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
     if not baldiv:
@@ -468,12 +464,21 @@ def enstoctl(model,uens,vens,dzens,ivar=0):
             psi = model.ft.spectogrd(psispec); chi = model.ft.spectogrd(psispec)
             xens[nmem,0:2,:] = psi.reshape(2,model.ft.Nt**2)
             xens[nmem,2:4,:] = chi.reshape(2,model.ft.Nt**2)
+    elif ivar==3:
+        # update pv,div,dz
+        for nmem in range(nanals):
+            vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
+            vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
+            pv = (vrt + model.f)/dzens[nmem]
+            xens[nmem,0:2,:] = pv[:].reshape(2,model.ft.Nt**2)
+            xens[nmem,2:4,:] = div[:].reshape(2,model.ft.Nt**2)
     else: 
         raise ValueError('ivar myst be 0,1,or 2')
     xens[:,4:6,:] = dzens[:].reshape(nanals,2,model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens,ivar=0):
+def ctltoens(model,xens,ivar=0,\
+             nitermax=1000,relax=0.015,eps=1.e-4,verbose=False):
     uens = np.empty((nanals,2,Nt,Nt),dtype)
     vens = np.empty((nanals,2,Nt,Nt),dtype)
     dzens = np.empty((nanals,2,Nt,Nt),dtype)
@@ -493,6 +498,16 @@ def ctltoens(model,xens,ivar=0):
             psispec = model.ft.grdtospec(psi); chispec = model.ft.grdtospec(chi)
             vrtspec = model.ft.lap*psispec;  divspec = model.ft.lap*chispec
             uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
+    elif ivar == 3:
+        for nmem in range(nanals):
+            pv = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
+            dz = xens[nmem,4:6,:].reshape(2,model.ft.Nt,model.ft.Nt) # equal to background, not updated
+            # invert pv balanced u,v,dz
+            dzbal, vrtbal, divbal = model.pvinvert(pv,dzin=dz,nodiv=False,\
+                                    nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+            vrtspec = model.ft.grdtospec(vrtbal); divspec = model.ft.grdtospec(divbal)
+            uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
+            dzens[nmem] = dzbal
     dzens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     return uens,vens,dzens
 
