@@ -71,6 +71,7 @@ filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model cli
 #filename_truth = filename_climo
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
+balpv = False # define balance in terms of PV instead of vorticity
 
 profile = False # turn on profiling?
 
@@ -344,7 +345,31 @@ def gethofx(uens,vens,zsfcens,zmidens,indxob,nanals,nobs):
         hxens[nanal,5*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def balens(model,uens,vens,dzens,baldiv=False,nitermax=1000,divguess=True,relax=0.01,eps=1.e-2,verbose=False):
+def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
+           theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
+           zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
+    ft = Fouriert(N,L,threads=1)
+    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
+    vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
+    vrt = ft.spectogrd(vrtspec)
+    pv = (vrt + model.f)/dzmem
+    dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dzmem,nodiv=nodiv,\
+                            nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+    #dz1mean = dzmem[0,...].mean()
+    #dz2mean = dzmem[1,...].mean()
+    #dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=None,dz1mean=dz1mean,dz2mean=dz2mean,nodiv=nodiv,\
+    #                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+    vrtspec = ft.grdtospec(vrtbal)
+    if nodiv:
+        # no balanced divergence.
+        divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+    else:
+        divspec = ft.grdtospec(divbal)
+    ubal, vbal = ft.getuv(vrtspec,divspec)
+    return ubal,vbal,dzbal
+
+def balens(model,uens,vens,dzens,pvbal=False,baldiv=False,nitermax=1000,divguess=True,relax=0.01,eps=1.e-2,verbose=False):
     if not baldiv:
         # balanced div assumed zero
         divguess=None
@@ -355,17 +380,26 @@ def balens(model,uens,vens,dzens,baldiv=False,nitermax=1000,divguess=True,relax=
     for nmem in range(nanals):
         if verbose: print('ens member ',nmem)
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
-        vrt = model.ft.spectogrd(vrtspec)
         if divguess==True:
             div = model.ft.spectogrd(divspec) # use calculated div as initial guess
+            nodiv=False
         elif divguess==False:
             div = True # use zeros as initial guess
+            nodiv=False
         else:
             div = False # don't compute balanced div
-        dz1mean = dzens[nmem,...][0].mean()
-        dz2mean = dzens[nmem,...][1].mean()
-        dzbal, divbal = model.nlbalance(vrtspec,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
-                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+            nodiv=True
+        if pvbal:
+            vrt = model.ft.spectogrd(vrtspec)
+            pv = (vrt + model.f)/dzens[nmem]
+            dzbal, vrtbal, divbal = self.pvinvert(pv,dzin=dzens[nmem],nodiv=nodiv,\
+                                    nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+            vrtspec = model.ft.grdtospec(vrtbal)
+        else:
+            dz1mean = dzens[nmem,...][0].mean()
+            dz2mean = dzens[nmem,...][1].mean()
+            dzbal, divbal = model.nlbalance(vrtspec,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
+                            nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
         if type(div) == bool and div == False:
             # no balanced divergence (much faster)
             divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
@@ -375,7 +409,7 @@ def balens(model,uens,vens,dzens,baldiv=False,nitermax=1000,divguess=True,relax=
         dzens_bal[nmem] = dzbal
     return uens_bal,vens_bal,dzens_bal
 
-def balmem(N,L,dt,umem,vmem,dzmem,baldiv=False,divguess=True,nitermax=1000,relax=0.01,eps=1.e-2,verbose=False,\
+def balmem(N,L,dt,umem,vmem,dzmem,pvbal=False,baldiv=False,divguess=True,nitermax=1000,relax=0.01,eps=1.e-2,verbose=False,\
            theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
            zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
     if not baldiv:
@@ -387,14 +421,24 @@ def balmem(N,L,dt,umem,vmem,dzmem,baldiv=False,divguess=True,nitermax=1000,relax
     vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
     if divguess==True:
         div = model.ft.spectogrd(divspec) # use calculated div as initial guess
+        nodiv = False
     elif divguess==False:
         div = True # use zeros as initial guess
+        nodiv = False
     else:
         div = False # don't compute balanced div
-    dz1mean = dzmem[0].mean()
-    dz2mean = dzmem[1].mean()
-    dzbal, divbal = model.nlbalance(vrtspec,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
-                    nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+        nodiv = True
+    if pvbal:
+        vrt = ft.spectogrd(vrtspec)
+        pv = (vrt + model.f)/dzmem
+        dzbal, vrtbal, divbal = self.pvinvert(pv,dzin=dzmem,nodiv=nodiv,\
+                                nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
+        vrtspec = model.ft.grdtospec(vrtbal)
+    else:
+        dz1mean = dzmem[0].mean()
+        dz2mean = dzmem[1].mean()
+        dzbal, divbal = model.nlbalance(vrtspec,div=div,dz1mean=dz1mean,dz2mean=dz2mean,\
+                        nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
     if type(div) == bool and div == False:
         # no balanced divergence (much faster)
         divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
