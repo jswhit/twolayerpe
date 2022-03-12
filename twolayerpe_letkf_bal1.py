@@ -71,7 +71,7 @@ filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model cli
 #filename_truth = filename_climo
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi, 3 for pv,div
-pvbal = False # define balance in terms of PV instead of vorticity
+pvbal = True # define balance in terms of PV instead of vorticity
 
 profile = False # turn on profiling?
 
@@ -84,10 +84,12 @@ n_jobs = int(os.getenv('N_JOBS','0'))
 threads = 1
 
 if ivar == 0:
-    nlevs_update = 4
+    if pvbal:
+        nlevs_update = 6
+    else:
+        nlevs_update = 4
 else:
     nlevs_update = 2
-if pvbal: nlevs_update=6
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 precision = 'float32'
@@ -346,7 +348,7 @@ def gethofx(uens,vens,zsfcens,zmidens,indxob,nanals,nobs):
         hxens[nanal,5*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.01,eps=1.e-2,verbose=False,\
+def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
            theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
            zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
     ft = Fouriert(N,L,threads=1)
@@ -366,7 +368,7 @@ def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.01,eps=1.e-2,
     ubal, vbal = ft.getuv(vrtspec,divspec)
     return ubal,vbal,dzbal
 
-def balens(model,uens,vens,dzens,pvbal=False,baldiv=False,nitermax=1000,divguess=True,relax=0.01,eps=1.e-2,verbose=False):
+def balens(model,uens,vens,dzens,pvbal=False,baldiv=False,nitermax=1000,divguess=True,relax=0.015,eps=1.e-4,verbose=False):
     if not baldiv:
         # balanced div assumed zero
         divguess=None
@@ -406,7 +408,7 @@ def balens(model,uens,vens,dzens,pvbal=False,baldiv=False,nitermax=1000,divguess
         dzens_bal[nmem] = dzbal
     return uens_bal,vens_bal,dzens_bal
 
-def balmem(N,L,dt,umem,vmem,dzmem,pvbal=False,baldiv=False,divguess=True,nitermax=1000,relax=0.01,eps=1.e-2,verbose=False,\
+def balmem(N,L,dt,umem,vmem,dzmem,pvbal=False,baldiv=False,divguess=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
            theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
            zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
     if not baldiv:
@@ -479,7 +481,7 @@ def enstoctl(model,uens,vens,dzens,ivar=0):
     return xens
 
 def ctltoens(model,xens,ivar=0,\
-             nitermax=1000,relax=0.01,eps=1.e-2,verbose=False):
+             nitermax=1000,relax=0.015,eps=1.e-4,verbose=False):
     uens = np.empty((nanals,2,Nt,Nt),dtype)
     vens = np.empty((nanals,2,Nt,Nt),dtype)
     dzens = np.empty((nanals,2,Nt,Nt),dtype)
@@ -542,9 +544,11 @@ for ntime in range(nassim):
     if ntime < 100:
         baldiv2=False
         dont_update_unbal2=True
+        pvbal2=False
     else:
         baldiv2=baldiv
         dont_update_unbal2=dont_update_unbal
+        pvbal2=pvbal
 
     # check model clock
     if model.t != obtimes[ntime+ntstart]:
@@ -586,9 +590,9 @@ for ntime in range(nassim):
     # (assuming no cross-covariance)
     # impose balance constraint on balanced part of ens after the update
     if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv2,pvbal=pvbal)
+        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv2,pvbal=pvbal2)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],pvbal=pvbal,baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],pvbal=pvbal2,baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
         dzens_bal = np.empty(dzens.shape, dzens.dtype)
         for nanal in range(nanals):
@@ -649,9 +653,9 @@ for ntime in range(nassim):
 
     # balance 'balanced' analysis ensemble
     if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv2,pvbal=pvbal)
+        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv2,pvbal=pvbal2)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],pvbal=pvbal,baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],pvbal=pvbal2,baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
         dzens_bal = np.empty(dzens.shape, dzens.dtype)
         for nanal in range(nanals):
