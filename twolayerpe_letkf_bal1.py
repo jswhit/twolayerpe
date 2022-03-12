@@ -71,7 +71,7 @@ filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model cli
 #filename_truth = filename_climo
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
-balpv = False # define balance in terms of PV instead of vorticity
+pvbal = True # define balance in terms of PV instead of vorticity
 
 profile = False # turn on profiling?
 
@@ -164,8 +164,8 @@ if not read_restart:
 else:
     ncinit.close()
 
-print("# hcovlocal=%g baldiv=%s dont_update_unbal=%s covinf1=%s covinf2=%s nanals=%s" %\
-     (hcovlocal_scale/1000.,baldiv,dont_update_unbal,covinflate1,covinflate2,nanals))
+print("# hcovlocal=%g baldiv=%s pvbal=%s dont_update_unbal=%s covinf1=%s covinf2=%s nanals=%s" %\
+     (hcovlocal_scale/1000.,baldiv,pvbal,dont_update_unbal,covinflate1,covinflate2,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
@@ -392,7 +392,7 @@ def balens(model,uens,vens,dzens,pvbal=False,baldiv=False,nitermax=1000,divguess
         if pvbal:
             vrt = model.ft.spectogrd(vrtspec)
             pv = (vrt + model.f)/dzens[nmem]
-            dzbal, vrtbal, divbal = self.pvinvert(pv,dzin=dzens[nmem],nodiv=nodiv,\
+            dzbal, vrtbal, divbal = model.pvinvert(pv,dzin=dzens[nmem],nodiv=nodiv,\
                                     nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
             vrtspec = model.ft.grdtospec(vrtbal)
         else:
@@ -431,7 +431,7 @@ def balmem(N,L,dt,umem,vmem,dzmem,pvbal=False,baldiv=False,divguess=True,niterma
     if pvbal:
         vrt = ft.spectogrd(vrtspec)
         pv = (vrt + model.f)/dzmem
-        dzbal, vrtbal, divbal = self.pvinvert(pv,dzin=dzmem,nodiv=nodiv,\
+        dzbal, vrtbal, divbal = model.pvinvert(pv,dzin=dzmem,nodiv=nodiv,\
                                 nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
         vrtspec = model.ft.grdtospec(vrtbal)
     else:
@@ -570,9 +570,9 @@ for ntime in range(nassim):
     # (assuming no cross-covariance)
     # impose balance constraint on balanced part of ens after the update
     if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv2)
+        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,baldiv=baldiv2,pvbal=pvbal)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],pvbal=pvbal,baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
         dzens_bal = np.empty(dzens.shape, dzens.dtype)
         for nanal in range(nanals):
@@ -633,9 +633,9 @@ for ntime in range(nassim):
 
     # balance 'balanced' analysis ensemble
     if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv2)
+        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,baldiv=baldiv2,pvbal=pvbal)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],pvbal=pvbal,baldiv=baldiv2,divguess=True,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
         dzens_bal = np.empty(dzens.shape, dzens.dtype)
         for nanal in range(nanals):
