@@ -70,8 +70,9 @@ nassim = 800 # assimilation times to run
 nanals = 20 # ensemble members
 
 oberrstdev_zmid = 100.  # interface height ob error in meters
-oberrstdev_zsfc = 10. # surface height ob error in meters
+#oberrstdev_zsfc = 10. # surface height ob error in meters
 #oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
+oberrstdev_zsfc = 1.e30 # don't assimilate surface height
 oberrstdev_wind = 1.e30 # don't assimilate winds
 
 # nature run created using twolayer_naturerun.py.
@@ -112,8 +113,8 @@ diff_order=nc_climo.diff_order
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
-#div2_diff_efold=1800.
-div2_diff_efold=1.e30
+div2_diff_efold=1800.
+#div2_diff_efold=1.e30
 model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,\
 umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold,\
 div2_diff_efold=div2_diff_efold)
@@ -293,16 +294,16 @@ def getspreaderr(model,uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     vecwind_err = np.sqrt(uerr+verr)
     vecwind_sprd = np.sqrt(usprd+vsprd)
 
-    #zsfc = dzens.sum(axis=1) - model.ztop
-    #zmid = model.ztop - dzens[:,1,:,:]
-    #zsfc_truth = model.ztop-dz_truth.sum(axis=0)
-    #zmid_truth = model.ztop-dz_truth[1,:,:]
+    zsfc = model.ztop - dzens.sum(axis=1)
+    zmid = model.ztop - dzens[:,1,:,:]
+    zsfc_truth = model.ztop-dz_truth.sum(axis=0)
+    zmid_truth = model.ztop-dz_truth[1,:,:]
 
     # define zmid, zdfc using M/g (analagous to geopotential height in press coords)
-    zsfc = dzens.sum(axis=1)
-    zmid = zsfc + (model.delth/model.theta1)*dzens[:,1,...]
-    zsfc_truth = dz_truth[0,...]+dz_truth[1,...]
-    zmid_truth = zsfc_truth + (model.delth/model.theta1)*dz_truth[1,...]
+    #zsfc = dzens.sum(axis=1)
+    #zmid = zsfc + (model.delth/model.theta1)*dzens[:,1,...]
+    #zsfc_truth = dz_truth[0,...]+dz_truth[1,...]
+    #zmid_truth = zsfc_truth + (model.delth/model.theta1)*dz_truth[1,...]
 
     zsfcensmean = zsfc.mean(axis=0)
     zmidensmean = zmid.mean(axis=0)
@@ -468,14 +469,14 @@ for ntime in range(nassim):
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
     # prior stats.
-    vecwind1_errav_b,vecwind1_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-    zsfc_errav_b,zsfc_sprdav_b,zmid_errav_b,zmid_sprdav_b,ke_errav,ke_sprdav=\
+    vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,\
+    zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,ke_errav,ke_sprdav=\
     getspreaderr(model,uens,vens,dzens,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
     totmass = ((dzens[:,0,...]+dzens[:,1,...]).mean(axis=0)).mean()/1000.
     print("%s %g %g %g %g %g %g %g %g %g %g %g %g %g" %\
-    (ntime+ntstart,zmid_errav_b,zmid_sprdav_b,vecwind2_errav_b,vecwind2_sprdav_b,\
-     zsfc_errav_b,zsfc_sprdav_b,vecwind1_errav_b,vecwind1_sprdav_b,ke_errav,ke_sprdav,inflation_factor.mean(),masstend_diag,totmass))
+    (ntime+ntstart,zmid_errav,zmid_sprdav,vecwind2_errav,vecwind2_sprdav,\
+     zsfc_errav,zsfc_sprdav,vecwind1_errav,vecwind1_sprdav,ke_errav,ke_sprdav,inflation_factor.mean(),masstend_diag,totmass))
 
     # update state vector with serial filter or letkf.
     if not debug_model: 
@@ -510,13 +511,16 @@ for ntime in range(nassim):
 
     # posterior stats
     if posterior_stats:
-        vecwind1_errav_a,vecwind1_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-        zsfc_errav_a,zsfc_sprdav_a,zmid_errav_a,zmid_sprdav_a=\
+        vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,\
+        zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,ke_errav,ke_sprdav=\
         getspreaderr(model,uens,vens,dzens,\
         u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-        print("%s %g %g %g %g %g %g %g %g" %\
-        (ntime+ntstart,zmid_errav_a,zmid_sprdav_a,vecwind2_errav_a,vecwind2_sprdav_a,\
-         zsfc_errav_a,zsfc_sprdav_a,vecwind1_errav_a,vecwind1_sprdav_a))
+        totmass = ((dzens[:,0,...]+dzens[:,1,...]).mean(axis=0)).mean()/1000.
+        print(inflation_factor.min(), inflation_factor.max(), inflation_factor.mean())
+        print("%s %g %g %g %g %g %g %g %g %g %g %g %g %g" %\
+        (ntime+ntstart,zmid_errav,zmid_sprdav,vecwind2_errav,vecwind2_sprdav,\
+         zsfc_errav,zsfc_sprdav,vecwind1_errav,vecwind1_sprdav,ke_errav,ke_sprdav,inflation_factor.mean(),masstend_diag,totmass))
+        raise SystemExit
 
     # save data.
     if savedata is not None:

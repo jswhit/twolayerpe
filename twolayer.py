@@ -72,7 +72,7 @@ class TwoLayer(object):
         dpsispecdt = self.ft.invlap*dvrtspecdt
         dpsixxdt = self.ft.spectogrd(-self.ft.k**2*dpsispecdt)
         dpsiyydt = dvrtdt - dpsixxdt
-        dpsixydt = self.ft.spectogrd(self.ft.k*self.ft.l*dpsispecdt)
+        dpsixydt = self.ft.spectogrd(-self.ft.k*self.ft.l*dpsispecdt)
         tmpspec = self.f*dvrtspecdt + 2.*self.ft.grdtospec(dpsixxdt*psiyy + psixx*dpsiyydt - 2*psixy*dpsixydt)
         mspec = self.ft.invlap*tmpspec
         dzspec = np.zeros(mspec.shape, mspec.dtype)
@@ -93,9 +93,13 @@ class TwoLayer(object):
         psispec = self.ft.invlap*vrtspec
         psixx = self.ft.spectogrd(-self.ft.k**2*psispec)
         psiyy = self.ft.spectogrd(-self.ft.l**2*psispec)
-        psixy = self.ft.spectogrd(self.ft.k*self.ft.l*psispec)
+        psixy = self.ft.spectogrd(-self.ft.k*self.ft.l*psispec)
         urot = self.ft.spectogrd(-self.ft.il*psispec); vrot = self.ft.spectogrd(self.ft.ik*psispec)
         vrt = self.ft.spectogrd(vrtspec)
+
+        # get balanced divergence computed iterative algorithm
+        # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
+        # start iteration with div=0
         converged=False
         for niter in range(nitermax):
             divspec = self.ft.grdtospec(div)
