@@ -70,8 +70,7 @@ filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model cli
 # perfect model
 #filename_truth = filename_climo
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
-ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi, 3 for pv,div
-pvbal = True # define balance in terms of PV instead of vorticity
+pvbal = False # define balance in terms of PV instead of vorticity
 
 profile = False # turn on profiling?
 
@@ -83,13 +82,6 @@ exptname = os.getenv('exptname','test')
 n_jobs = int(os.getenv('N_JOBS','0'))
 threads = 1
 
-if ivar == 0:
-    if pvbal:
-        nlevs_update = 6
-    else:
-        nlevs_update = 4
-else:
-    nlevs_update = 2
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 precision = 'float32'
@@ -446,71 +438,19 @@ def balmem(N,L,dt,umem,vmem,dzmem,pvbal=False,baldiv=False,divguess=True,niterma
     ubal,vbal = model.ft.getuv(vrtspec,divspec)
     return ubal,vbal,dzbal
 
-def enstoctl(model,uens,vens,dzens,ivar=0):
+def enstoctl(model,uens,vens,dzens):
     xens = np.empty((nanals,6,Nt**2),dtype)
-    if ivar==0:
-        # update u,v
-        xens[:,0:2,:] = uens[:].reshape(nanals,2,model.ft.Nt**2)
-        xens[:,2:4,:] = vens[:].reshape(nanals,2,model.ft.Nt**2)
-    elif ivar==1:
-        # update vort,div
-        for nmem in range(nanals):
-            vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
-            vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
-            xens[nmem,0:2,:] = vrt[:].reshape(2,model.ft.Nt**2)
-            xens[nmem,2:4,:] = div[:].reshape(2,model.ft.Nt**2)
-    elif ivar==2:
-        # update psi,chi
-        for nmem in range(nanals):
-            vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
-            psispec = model.ft.invlap*vrtspec; chispec = model.ft.invlap*psispec
-            psi = model.ft.spectogrd(psispec); chi = model.ft.spectogrd(psispec)
-            xens[nmem,0:2,:] = psi.reshape(2,model.ft.Nt**2)
-            xens[nmem,2:4,:] = chi.reshape(2,model.ft.Nt**2)
-    elif ivar==3:
-        # update pv,div,dz
-        for nmem in range(nanals):
-            vrtspec,divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
-            vrt = model.ft.spectogrd(vrtspec); div = model.ft.spectogrd(divspec)
-            pv = (vrt + model.f)/dzens[nmem]
-            xens[nmem,0:2,:] = pv[:].reshape(2,model.ft.Nt**2)
-            xens[nmem,2:4,:] = div[:].reshape(2,model.ft.Nt**2)
-    else: 
-        raise ValueError('ivar myst be 0,1,or 2')
+    xens[:,0:2,:] = uens[:].reshape(nanals,2,model.ft.Nt**2)
+    xens[:,2:4,:] = vens[:].reshape(nanals,2,model.ft.Nt**2)
     xens[:,4:6,:] = dzens[:].reshape(nanals,2,model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens,ivar=0,\
-             nitermax=1000,relax=0.015,eps=1.e-4,verbose=False):
+def ctltoens(model,xens):
     uens = np.empty((nanals,2,Nt,Nt),dtype)
     vens = np.empty((nanals,2,Nt,Nt),dtype)
     dzens = np.empty((nanals,2,Nt,Nt),dtype)
-    if ivar == 0:
-        uens[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-        vens[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    elif ivar == 1:
-        for nmem in range(nanals):
-            vrt = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            div = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            vrtspec = model.ft.grdtospec(vrt); divspec = model.ft.grdtospec(div)
-            uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
-    elif ivar == 2:
-        for nmem in range(nanals):
-            psi = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            chi = xens[nmem,2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            psispec = model.ft.grdtospec(psi); chispec = model.ft.grdtospec(chi)
-            vrtspec = model.ft.lap*psispec;  divspec = model.ft.lap*chispec
-            uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
-    elif ivar == 3:
-        for nmem in range(nanals):
-            pv = xens[nmem,0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
-            dz = xens[nmem,4:6,:].reshape(2,model.ft.Nt,model.ft.Nt) # equal to background, not updated
-            # invert pv balanced u,v,dz
-            dzbal, vrtbal, divbal = model.pvinvert(pv,dzin=dz,nodiv=False,\
-                                    nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-            vrtspec = model.ft.grdtospec(vrtbal); divspec = model.ft.grdtospec(divbal)
-            uens[nmem], vens[nmem] = model.ft.getuv(vrtspec,divspec)
-            dzens[nmem] = dzbal
+    uens[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+    vens[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     dzens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     return uens,vens,dzens
 
@@ -635,21 +575,21 @@ for ntime in range(nassim):
      zsfc_errav,zsfc_sprdav,vecwind1_errav,vecwind1_sprdav,ke_errav,ke_sprdav,masstend_diag,totmass))
 
     # EnKF update for balanced part.
-    xens = enstoctl(model,uens_bal,vens_bal,dzens_bal,ivar=ivar)
+    xens = enstoctl(model,uens_bal,vens_bal,dzens_bal)
     xensmean_b = xens.mean(axis=0)
     xprime = xens-xensmean_b
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
     if not debug_model: 
         # update state vector using letkf weights
-        for k in range(nlevs_update): # only need to update winds or vorticity
+        for k in range(4): # only need to update u,v
             for n in range(model.ft.Nt**2):
                 xens[:, k, n] = xensmean_b[k,n] + np.dot(wts[n].T, xprime[:, k, n])
         t2 = time.time()
         if profile: print('cpu time for EnKF update',t2-t1)
         xens = inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2)
 
-    uens_bal,vens_bal,dzens_bal = ctltoens(model,xens,ivar=ivar)
+    uens_bal,vens_bal,dzens_bal = ctltoens(model,xens)
 
     # balance 'balanced' analysis ensemble
     if n_jobs == 0:
@@ -663,7 +603,7 @@ for ntime in range(nassim):
 
     if not dont_update_unbal2: # otherwise don't update unbalanced part.
         # EnKF update for unbalanced part.
-        xens = enstoctl(model,uens_unbal,vens_unbal,dzens_unbal,ivar=0)
+        xens = enstoctl(model,uens_unbal,vens_unbal,dzens_unbal)
         xensmean_b = xens.mean(axis=0)
         xprime = xens-xensmean_b
         fsprd = (xprime**2).sum(axis=0)/(nanals-1)
@@ -678,7 +618,7 @@ for ntime in range(nassim):
             if profile: print('cpu time for EnKF update',t2-t1)
             xens = inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2)
 
-        uens_unbal,vens_unbal,dzens_unbal = ctltoens(model,xens,ivar=0)
+        uens_unbal,vens_unbal,dzens_unbal = ctltoens(model,xens)
 
     if dont_update_unbal2 is None:
         # the unbalanced component of the analysis is set to zero
