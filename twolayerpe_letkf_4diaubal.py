@@ -6,6 +6,31 @@ from pyfft import Fouriert
 from enkf_utils import cartdist,letkfwts_compute,gaspcohn
 from joblib import Parallel, delayed
 
+def getbal(model,vrt,dz1mean=None,dz2mean=None):
+    """computes balanced layer thickness given vorticity (from nonlinear bal eqn)"""
+    if dz1mean is None: 
+        dz1mean = model.zmid
+    if dz2mean is None:
+        dz2mean = model.ztop - model.zmid
+    # first, solve non-linear balance equation to get layer thickness given vorticity
+    vrtspec = model.ft.grdtospec(vrt)
+    psispec = model.ft.invlap*vrtspec
+    psixx = model.ft.spectogrd(-model.ft.k**2*psispec)
+    psiyy = vrt - psixx
+    psixy = model.ft.spectogrd(-model.ft.k*model.ft.l*psispec)
+    tmpspec = model.f*vrtspec + 2.*model.ft.grdtospec(psixx*psiyy - psixy**2)
+    mspec = model.ft.invlap*tmpspec
+    dzspec = np.zeros(mspec.shape, mspec.dtype)
+    dzspec[0,...] = mspec[0,...]/model.theta1
+    dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(model.theta2-model.theta1)
+    dzspec[0,...] -= dzspec[1,...]
+    dzspec = (model.theta1/model.grav)*dzspec # convert from exner function to height units (m)
+    # set area mean in grid space to state of rest value
+    dz = model.ft.spectogrd(dzspec)
+    dz[0,...] = dz[0,...] - dz[0,...].mean() + dz1mean
+    dz[1,...] = dz[1,...] - dz[1,...].mean() + dz2mean
+    return dz
+
 # LETKF cycling for two-layer pe turbulence model with interface height obs.
 # horizontal localization (no vertical).
 # Relaxation to prior spread
@@ -50,7 +75,7 @@ else:
 #div2_diff_efold=1800. # extra laplacian div diff (suppress gravity modes)
 div2_diff_efold=1.e30
 use_iau = True
-balvar = True
+balvar = False
 dont_update_unbal=False # if balvar, dont update unbal var.
 fix_totmass = True # fix area mean dz in each layer.
 iau_filter_weights = True # use Lanczos weights instead of constant
@@ -368,9 +393,10 @@ def balens(model,uens,vens,dzens):
     for nmem in range(nanals):
         if verbose: print('ens member ',nmem)
         vrtspec, divspec = model.ft.getvrtdivspec(uens[nmem],vens[nmem])
+        vrt = model.ft.spectogrd(vrtspec)
         dz1mean = dzens[nmem,...][0].mean()
         dz2mean = dzens[nmem,...][1].mean()
-        dzbal,divbal = model.nlbalance(vrtspec,dz1mean=dz1mean,dz2mean=dz2mean)
+        dzbal = getbal(model,vrt,dz1mean=dz1mean,dz2mean=dz2mean)
         divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         uens_bal[nmem], vens_bal[nmem] = model.ft.getuv(vrtspec,divspec)
         dzens_bal[nmem] = dzbal
@@ -383,9 +409,10 @@ def balmem(N,L,dt,umem,vmem,dzmem,\
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
     vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
+    vrt = ft.spectogrd(vrtspec)
     dz1mean = dzmem[0].mean()
     dz2mean = dzmem[1].mean()
-    dzbal,divbal = model.nlbalance(vrtspec,dz1mean=dz1mean,dz2mean=dz2mean)
+    dzbal = getbal(model,vrt,dz1mean=dz1mean,dz2mean=dz2mean)
     divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     ubal, vbal = model.ft.getuv(vrtspec,divspec)
     return ubal,vbal,dzbal
