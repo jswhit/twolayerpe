@@ -39,11 +39,11 @@ x = x.astype(dtype); y = y.astype(dtype)
 vrtg[1] = vrtg[1]+2.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
 vrtspec = model.ft.grdtospec(vrtg)
 divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
-lyrthkspec = model.nlbalance(vrtspec)
-lyrthkg = model.ft.spectogrd(lyrthkspec)
+dzg,divg = model.nlbalance(vrtspec)
+dzspec = model.ft.grdtospec(dzg)
 ug,vg = model.ft.getuv(vrtspec,divspec)
 vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
-if lyrthkg.min() < 0:
+if dzg.min() < 0:
     raise ValueError('negative layer thickness! adjust jet parameters')
 
 savedata = 'twolayerpe_N%s_%shrly.nc' % (N,hrout) # save data plotted in a netcdf file.
@@ -97,16 +97,17 @@ if savedata is not None:
 t = 0.; nout = 0
 t1 = time.perf_counter()
 while t < tmax:
-    vrtspec, divspec, lyrthkspec = model.advance(vrtspec, divspec, lyrthkspec)
+    vrtspec, divspec, dzspec = model.advance(vrtspec, divspec, dzspec)
     t = model.t
     th = t/3600.
     print('t = %g hours' % th)
     if savedata is not None and t >= tmin:
         ug, vg = model.ft.getuv(vrtspec, divspec)
-        lyrthkg = model.ft.spectogrd(lyrthkspec)
+        dzg = model.ft.spectogrd(dzspec)
+        print(dzg[0].mean(), dzg[1].mean())
         uvar[nout,:,:,:] = ug
         vvar[nout,:,:,:] = vg
-        dzvar[nout,:,:,:] = lyrthkg
+        dzvar[nout,:,:,:] = dzg
         tvar[nout] = t
         nc.sync()
         if t >= tmax: nc.close()
