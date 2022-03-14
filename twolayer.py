@@ -456,8 +456,8 @@ if __name__ == "__main__":
     vrt[1] = vrt[1]+2.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
     vrtspec = model.ft.grdtospec(vrt)
     divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
-    dzspec = model.nlbalance(vrtspec)
-    dz = model.ft.spectogrd(dzspec)
+    dz,div = model.nlbalance(vrtspec)
+    dzspec = model.ft.grdtospec(dz)
     u,v = model.ft.getuv(vrtspec,divspec)
     vrtspec, divspec = model.ft.getvrtdivspec(u,v)
     if dz.min() < 0:
@@ -485,10 +485,10 @@ if __name__ == "__main__":
     def updatefig(*args):
         global vrtspec, divspec, dzspec
         for n in range(nout):
-            vrtspec, divspec, dzspec = model.rk4step(vrtspec, divspec,\
-                    dzspec)
+            vrtspec, divspec, dzspec = model.rk4step(vrtspec, divspec, dzspec)
         vrt = model.ft.spectogrd(vrtspec)
         dz = model.ft.spectogrd(dzspec)
+        #print(dz[0].mean(), dz[1].mean())
         pv = (0.5*model.zmid/model.f)*(vrt + model.f)/dz
         td = model.t/86400.
         im1.set_data(pv[0])
