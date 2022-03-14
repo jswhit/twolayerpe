@@ -411,6 +411,29 @@ def ctltoens(model,xens,fix_totmass=False):
             dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
     return uens,vens,dzens
 
+def inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2):
+    nanals = xens.shape[0]
+    xensmean_a = xens.mean(axis=0)
+    xprime = xens-xensmean_a
+    asprd = (xprime**2).sum(axis=0)/(nanals-1)
+    if covinflate2 < 0:
+        # relaxation to prior stdev (Whitaker & Hamill 2012)
+        asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
+        inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
+    else:
+        # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
+        # model, linear gaussian scenario)
+        # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
+        inc = xensmean_a - xensmean_b
+        inflation_factor = covinflate1*asprd + \
+        (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
+        inflation_factor = np.sqrt(inflation_factor/asprd)
+    #inflation_factor = np.where(inflation_factor < 1, 1. inflation_factor)
+    #print(inflation_factor.min(), inflation_factor.max(), inflation_factor.mean())
+    xprime = xprime*inflation_factor
+    xens = xprime + xensmean_a
+    return xens
+
 masstend_diag = 0.
 for ntime in range(nassim):
 
@@ -477,27 +500,6 @@ for ntime in range(nassim):
     def update(model,uens,vens,dzens,wts,covinflate1,covinflate2,\
                balvar=False,dont_update_unbal=False,fix_totmass=True,profile=False):
         nanals = uens.shape[0]
-        def inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2):
-            xensmean_a = xens.mean(axis=0)
-            xprime = xens-xensmean_a
-            asprd = (xprime**2).sum(axis=0)/(nanals-1)
-            if covinflate2 < 0:
-                # relaxation to prior stdev (Whitaker & Hamill 2012)
-                asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
-                inflation_factor = 1.+covinflate1*(fsprd-asprd)/asprd
-            else:
-                # Hodyss et al 2016 inflation (covinflate1=covinflate2=1 works well in perfect
-                # model, linear gaussian scenario)
-                # inflation = asprd + (asprd/fsprd)**2((fsprd/nanals)+2*inc**2/(nanals-1))
-                inc = xensmean_a - xensmean_b
-                inflation_factor = covinflate1*asprd + \
-                (asprd/fsprd)**2*((fsprd/nanals) + covinflate2*(2.*inc**2/(nanals-1)))
-                inflation_factor = np.sqrt(inflation_factor/asprd)
-            #inflation_factor = np.where(inflation_factor < 1, 1. inflation_factor)
-            #print(inflation_factor.min(), inflation_factor.max(), inflation_factor.mean())
-            xprime = xprime*inflation_factor
-            xens = xprime + xensmean_a
-            return xens
         if balvar:
             # split background into balanced and unbalanced parts
             # update balanced and unbalanced parts separately
