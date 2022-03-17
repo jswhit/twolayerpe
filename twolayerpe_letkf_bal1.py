@@ -53,7 +53,7 @@ diff_efold = None # use diffusion from climo file
 #div2_diff_efold=1800.
 div2_diff_efold=1.e30
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
-baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
+baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
 dont_update_unbal = False # if True, don't update unbal part, if None set unbal anal part to zero
 posterior_stats = False
 nassim = 1600 # assimilation times to run
@@ -72,7 +72,7 @@ filename_climo = 'twolayerpe_N64_6hrly.nc' # file name for forecast model climo
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 pvbal = False # define balance in terms of PV instead of vorticity
 linbal = False # use linear (geostrophic) balance instead of nonlinear (gradient) balance.
-dzmin = 5. # min layer thickness allowed
+dzmin = 10. # min layer thickness allowed
 
 profile = False # turn on profiling?
 

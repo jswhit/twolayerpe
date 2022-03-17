@@ -50,7 +50,7 @@ else:
 #div2_diff_efold=1800. # extra laplacian div diff (suppress gravity modes)
 div2_diff_efold=1.e30
 use_iau = True
-balvar = True
+balvar = False
 dont_update_unbal = False # if balvar, dont update unbal var.
 fix_totmass = True # fix area mean dz in each layer.
 iau_filter_weights = True # use Lanczos weights instead of constant
@@ -71,6 +71,8 @@ filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model cli
 # imperfect model (from higher res nature run)
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 diff_efold = None # use diffusion from climo file
+linbal = False
+dzmin = 10. # min layer thickness allowed
 
 exptname = os.getenv('exptname','test')
 # get envar to set number of multiprocessing jobs for LETKF and ensemble forecast
@@ -360,7 +362,7 @@ def gethofx(uens,vens,zsfcens,zmidens,indxob,nanals,nobs):
         hxens[nanal,5*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def balens(model,uens,vens,dzens):
+def balens(model,uens,vens,dzens,linbal=False):
     nanals = uens.shape[0]
     uens_bal = np.empty(uens.shape, uens.dtype)
     vens_bal = np.empty(uens.shape, uens.dtype)
@@ -370,13 +372,13 @@ def balens(model,uens,vens,dzens):
         #vrt = model.ft.spectogrd(vrtspec)
         dz1mean = dzens[nmem,...][0].mean()
         dz2mean = dzens[nmem,...][1].mean()
-        dzbal,div = model.nlbalance(vrtspec,dz1mean=dz1mean,dz2mean=dz2mean)
+        dzbal,div = model.nlbalance(vrtspec,linbal=linbal,dz1mean=dz1mean,dz2mean=dz2mean)
         divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         uens_bal[nmem], vens_bal[nmem] = model.ft.getuv(vrtspec,divspec)
         dzens_bal[nmem] = dzbal
     return uens_bal,vens_bal,dzens_bal
 
-def balmem(N,L,dt,umem,vmem,dzmem,\
+def balmem(N,L,dt,umem,vmem,dzmem,linbal=False,\
            theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
            zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
     ft = Fouriert(N,L,threads=1)
@@ -386,7 +388,7 @@ def balmem(N,L,dt,umem,vmem,dzmem,\
     #vrt = ft.spectogrd(vrtspec)
     dz1mean = dzmem[0].mean()
     dz2mean = dzmem[1].mean()
-    dzbal,div = model.nlbalance(vrtspec,dz1mean=dz1mean,dz2mean=dz2mean)
+    dzbal,div = model.nlbalance(vrtspec,linbal=linbal,dz1mean=dz1mean,dz2mean=dz2mean)
     divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
     ubal, vbal = model.ft.getuv(vrtspec,divspec)
     return ubal,vbal,dzbal
@@ -507,9 +509,9 @@ for ntime in range(nassim):
             # impose balance constraint on balanced part of ens after the update
             uens_b = uens.copy(); vens_b = vens.copy(); dzens_b=dzens.copy()
             if n_jobs == 0:
-                uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens)
+                uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,linbal=linbal)
             else:
-                results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+                results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],linbal=linbal,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
                 uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
                 dzens_bal = np.empty(dzens.shape, dzens.dtype)
                 for nanal in range(nanals):
@@ -531,9 +533,9 @@ for ntime in range(nassim):
             uens_bal,vens_bal,dzens_bal = ctltoens(model,xens,fix_totmass=fix_totmass)
             # balance 'balanced' analysis ensemble
             if n_jobs == 0:
-                uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal)
+                uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,linbal=linbal)
             else:
-                results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+                results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],linbal=linbal,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
                 uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
                 dzens_bal = np.empty(dzens.shape, dzens.dtype)
                 for nanal in range(nanals):
@@ -555,6 +557,8 @@ for ntime in range(nassim):
             uens_a = uens_bal + uens_unbal
             vens_a = vens_bal + vens_unbal
             dzens_a = dzens_bal + dzens_unbal
+            # make sure there is no negative layer thickness in analysis
+            np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
             uens_inc = (uens_a-uens_b).copy()
             vens_inc = (vens_a-vens_b).copy()
             dzens_inc = (dzens_a-dzens_b).copy()
@@ -574,6 +578,8 @@ for ntime in range(nassim):
             xens = inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2)
             # back to 3d state vector
             uens_a,vens_a,dzens_a = ctltoens(model,xens,fix_totmass=fix_totmass)
+            # make sure there is no negative layer thickness in analysis
+            np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
             uens_inc = uens_a-uens_b
             vens_inc = vens_a-vens_b
             dzens_inc = dzens_a-dzens_b
