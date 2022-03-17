@@ -12,6 +12,8 @@ from joblib import Parallel, delayed
 # inflation, or Hodyss and Campbell inflation.
 # random observing network.
 
+# this version uses LETKF weights to compute increment at every model timestep
+
 if len(sys.argv) == 1:
    msg="""
 python twolayerpe_enkf.py hcovlocal_scale <covinflate1 covinflate2>
@@ -58,16 +60,17 @@ oberrstdev_zsfc = 1.e30 # don't assimilate surface height
 oberrstdev_wind = 1.e30 # don't assimilate winds
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 800 # assimilation times to run
+nassim = 1600 # assimilation times to run
 nanals = 20 # ensemble members
 posterior_stats = False
 # nature run created using twolayer_naturerun.py.
-filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model climo
+filename_climo = 'twolayerpe_N64_6hrly.nc' # file name for forecast model climo
 # perfect model
 #filename_truth = filename_climo
 # imperfect model (from higher res nature run)
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 diff_efold = None # use diffusion from climo file
+dzmin = 10. # min layer thickness allowed
 
 exptname = os.getenv('exptname','test')
 # get envar to set number of multiprocessing jobs for LETKF and ensemble forecast
@@ -486,6 +489,7 @@ for ntime in range(nassim):
         xens = inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2)
         # back to 3d state vector
         uens_a,vens_a,dzens_a = ctltoens(model,xens)
+        np.clip(dzens_a,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens_a)
         uens_inc = uens_a-uens_b
         vens_inc = vens_a-vens_b
         dzens_inc = dzens_a-dzens_b
@@ -577,13 +581,14 @@ for ntime in range(nassim):
             # posterior multiplicative inflation.
             xens = inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2)
             uens_a,vens_a,dzens_a = ctltoens(model,xens,fix_totmass=fix_totmass)
+            np.clip(dzens_a,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens_a)
             uens_inc[nt] = uens_a-uens4d[nt]
             vens_inc[nt] = vens_a-vens4d[nt]
             dzens_inc[nt] = dzens_a-dzens4d[nt]
             if fix_totmass:
                 for nmem in range(nanals):
-                    dzens_inc[nmem][0] -= dzens_inc[nmem][0].mean()
-                    dzens_inc[nmem][1] -= dzens_inc[nmem][1].mean()
+                    dzens_inc[nt,nmem,0,...] -= dzens_inc[nt,nmem,0,...].mean()
+                    dzens_inc[nt,nmem,1,...] -= dzens_inc[nt,nmem,1,...].mean()
         results = Parallel(n_jobs=n_jobs)(delayed(run_model_iau)(uens_beg[nanal],vens_beg[nanal],dzens_beg[nanal],uens_inc[:,nanal,...],vens_inc[:,nanal,...],dzens_inc[:,nanal,...],wts_iau,N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]

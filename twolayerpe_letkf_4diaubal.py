@@ -61,11 +61,11 @@ oberrstdev_zsfc = 1.e30 # don't assimilate surface height
 oberrstdev_wind = 1.e30 # don't assimilate winds
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
-nassim = 800 # assimilation times to run
+nassim = 1600 # assimilation times to run
 nanals = 20 # ensemble members
 posterior_stats = False
 # nature run created using twolayer_naturerun.py.
-filename_climo = 'twolayerpe_N64_6hrly_sp.nc' # file name for forecast model climo
+filename_climo = 'twolayerpe_N64_6hrly.nc' # file name for forecast model climo
 # perfect model
 #filename_truth = filename_climo
 # imperfect model (from higher res nature run)
@@ -558,7 +558,7 @@ for ntime in range(nassim):
             vens_a = vens_bal + vens_unbal
             dzens_a = dzens_bal + dzens_unbal
             # make sure there is no negative layer thickness in analysis
-            np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
+            np.clip(dzens_a,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens_a)
             uens_inc = (uens_a-uens_b).copy()
             vens_inc = (vens_a-vens_b).copy()
             dzens_inc = (dzens_a-dzens_b).copy()
@@ -579,7 +579,7 @@ for ntime in range(nassim):
             # back to 3d state vector
             uens_a,vens_a,dzens_a = ctltoens(model,xens,fix_totmass=fix_totmass)
             # make sure there is no negative layer thickness in analysis
-            np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
+            np.clip(dzens_a,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens_a)
             uens_inc = uens_a-uens_b
             vens_inc = vens_a-vens_b
             dzens_inc = dzens_a-dzens_b
