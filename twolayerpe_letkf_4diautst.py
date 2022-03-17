@@ -50,7 +50,7 @@ else:
 #div2_diff_efold=1800. # extra laplacian div diff (suppress gravity modes)
 div2_diff_efold=1.e30
 fix_totmass = True # fix area mean dz in each layer.
-iau_filter_weights = False # use Lanczos weights instead of constant
+iau_filter_weights = True # use Lanczos weights instead of constant
 oberrstdev_zmid = 100.  # interface height ob error in meters
 #oberrstdev_zsfc = 10. # surface height ob error in meters
 #oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
