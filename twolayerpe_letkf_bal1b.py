@@ -69,6 +69,7 @@ filename_climo = 'twolayerpe_N64_6hrly.nc' # file name for forecast model climo
 # perfect model
 #filename_truth = filename_climo
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
+nobal = False # no balance operator
 linbal = False # use linear (geostrophic) balance instead of nonlinear (gradient) balance.
 dzmin = 10. # min layer thickness allowed
 
@@ -159,8 +160,8 @@ if not read_restart:
 else:
     ncinit.close()
 
-print("# hcovlocal=%g linbal=%s baldiv=%s covinf1=%s covinf2=%s nanals=%s" %\
-     (hcovlocal_scale/1000.,linbal,baldiv,covinflate1,covinflate2,nanals))
+print("# hcovlocal=%g nobal=%s linbal=%s baldiv=%s covinf1=%s covinf2=%s nanals=%s" %\
+     (hcovlocal_scale/1000.,nobal,linbal,baldiv,covinflate1,covinflate2,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
@@ -423,51 +424,65 @@ def balmem(N,L,dt,umem,vmem,dzmem,linbal=False,baldiv=False,divguess=True,niterm
     ubal,vbal = model.ft.getuv(vrtspec,divspec)
     return ubal,vbal,dzbal
 
-def enstoctl(model,uens,vens,dzens,linbal=False,baldiv=False):
+def enstoctl(model,uens,vens,dzens,nobal=False,linbal=False,baldiv=False):
     nanals = uens.shape[0]
-    if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,linbal=linbal,baldiv=baldiv2)
+    if nobal:
+        xens = np.empty((nanals,6,Nt**2),dtype)
+        xens[:,0:2,:] = uens[:].reshape(nanals,2,model.ft.Nt**2)
+        xens[:,2:4,:] = vens[:].reshape(nanals,2,model.ft.Nt**2)
+        xens[:,4:6,:] = dzens[:].reshape(nanals,2,model.ft.Nt**2)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],linbal=linbal,baldiv=baldiv,divguess=True,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag=model.tdrag,tdiab=model.tdiab,umax=model.umax,jetexp=model.jetexp,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
-        uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
-        dzens_bal = np.empty(dzens.shape, dzens.dtype)
-        for nanal in range(nanals):
-            uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
-    uens_unbal = uens-uens_bal
-    vens_unbal = vens-vens_bal
-    dzens_unbal = dzens-dzens_bal
-    xens = np.empty((nanals,10,Nt**2),dtype)
-    xens[:,0:2,:] = uens_bal[:].reshape(nanals,2,model.ft.Nt**2) # carries signal of balanced part
-    xens[:,2:4,:] = vens_bal[:].reshape(nanals,2,model.ft.Nt**2)
-    xens[:,4:6,:] = uens_unbal[:].reshape(nanals,2,model.ft.Nt**2)
-    xens[:,6:8,:] = vens_unbal[:].reshape(nanals,2,model.ft.Nt**2)
-    xens[:,8:10,:] = dzens_unbal[:].reshape(nanals,2,model.ft.Nt**2)
+        if n_jobs == 0:
+            uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,linbal=linbal,baldiv=baldiv2)
+        else:
+            results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],linbal=linbal,baldiv=baldiv,divguess=True,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag=model.tdrag,tdiab=model.tdiab,umax=model.umax,jetexp=model.jetexp,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
+            uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
+            dzens_bal = np.empty(dzens.shape, dzens.dtype)
+            for nanal in range(nanals):
+                uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
+        uens_unbal = uens-uens_bal
+        vens_unbal = vens-vens_bal
+        dzens_unbal = dzens-dzens_bal
+        xens = np.empty((nanals,10,Nt**2),dtype)
+        xens[:,0:2,:] = uens_bal[:].reshape(nanals,2,model.ft.Nt**2) # carries signal of balanced part
+        xens[:,2:4,:] = vens_bal[:].reshape(nanals,2,model.ft.Nt**2)
+        xens[:,4:6,:] = uens_unbal[:].reshape(nanals,2,model.ft.Nt**2)
+        xens[:,6:8,:] = vens_unbal[:].reshape(nanals,2,model.ft.Nt**2)
+        xens[:,8:10,:] = dzens_unbal[:].reshape(nanals,2,model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens,linbal=linbal,baldiv=baldiv):
+def ctltoens(model,xens,nobal=False,linbal=linbal,baldiv=baldiv):
     nanals = xens.shape[0]
-    uens = np.empty((nanals,2,Nt,Nt),dtype)
-    vens = np.empty((nanals,2,Nt,Nt),dtype)
-    dzens = np.empty((nanals,2,Nt,Nt),dtype)
-    uens_bal = np.empty((nanals,2,Nt,Nt),dtype)
-    vens_bal = np.empty((nanals,2,Nt,Nt),dtype)
-    dzens_bal = np.empty((nanals,2,Nt,Nt),dtype)
-    dzens_bal[:,0,...] = model.zmid
-    dzens_bal[:,1,...] = model.ztop - model.zmid
-    uens_bal[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    vens_bal[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    uens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    vens[:] = xens[:,6:8,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    dzens[:] = xens[:,8:10,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    if n_jobs == 0:
-        uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,linbal=linbal,baldiv=baldiv)
+    if nobal:
+        uens = np.empty((nanals,2,Nt,Nt),dtype)
+        vens = np.empty((nanals,2,Nt,Nt),dtype)
+        dzens = np.empty((nanals,2,Nt,Nt),dtype)
+        uens[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        vens[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        dzens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],linbal=linbal,baldiv=baldiv,divguess=True,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag=model.tdrag,tdiab=model.tdiab,umax=model.umax,jetexp=model.jetexp,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
-        for nanal in range(nanals):
-            uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
-    uens += uens_bal
-    vens += vens_bal
-    dzens += dzens_bal
+        uens = np.empty((nanals,2,Nt,Nt),dtype)
+        vens = np.empty((nanals,2,Nt,Nt),dtype)
+        dzens = np.empty((nanals,2,Nt,Nt),dtype)
+        uens_bal = np.empty((nanals,2,Nt,Nt),dtype)
+        vens_bal = np.empty((nanals,2,Nt,Nt),dtype)
+        dzens_bal = np.empty((nanals,2,Nt,Nt),dtype)
+        dzens_bal[:,0,...] = model.zmid
+        dzens_bal[:,1,...] = model.ztop - model.zmid
+        uens_bal[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        vens_bal[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        uens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        vens[:] = xens[:,6:8,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        dzens[:] = xens[:,8:10,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        if n_jobs == 0:
+            uens_bal,vens_bal,dzens_bal = balens(model,uens_bal,vens_bal,dzens_bal,linbal=linbal,baldiv=baldiv)
+        else:
+            results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],linbal=linbal,baldiv=baldiv,divguess=True,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag=model.tdrag,tdiab=model.tdiab,umax=model.umax,jetexp=model.jetexp,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
+            for nanal in range(nanals):
+                uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
+        uens += uens_bal
+        vens += vens_bal
+        dzens += dzens_bal
     return uens,vens,dzens
 
 def inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2):
