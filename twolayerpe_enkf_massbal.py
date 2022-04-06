@@ -402,9 +402,13 @@ def ctltoens(model,xens, xens_b):
         #incmask = np.sqrt((uens[nmem]-uens_b[nmem])**2+(vens[nmem]-vens_b[nmem])**2)
         uinc = (umassflux - umassflux_a)/(dzens[nanal]*incmask).sum(axis=0)
         print(umassflux.shape, uinc.shape)
-        uens[nanal] += uinc[np.newaxis,:,:]*incmask
+        uinc = uinc[np.newaxis,:,:]*incmask
+        print(uinc.min(), uinc.max())
+        uens[nanal] -= uinc
         vinc = (vmassflux - vmassflux_a)/(dzens[nanal]*incmask).sum(axis=0)
-        vens[nanal] += vinc[np.newaxis,:,:]*incmask
+        vinc = vinc[np.newaxis,:,:]*incmask
+        print(vinc.min(), vinc.max())
+        vens[nanal] -= vinc
         # recompute
         umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
         vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
