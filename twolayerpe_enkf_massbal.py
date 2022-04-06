@@ -348,7 +348,7 @@ def gethofx(uens,vens,zsfcens,zmidens,indxob,nanals,nobs):
 
 def enstoctl(model,uens,vens,dzens):
     nanals = uens.shape[0]; Nt = model.ft.Nt
-    xens = np.empty((nanals,7,Nt**2),dtype)
+    xens = np.empty((nanals,8,Nt**2),dtype)
     xens[:,0:2,:] = uens[:].reshape(nanals,2,Nt**2)
     xens[:,2:4,:] = vens[:].reshape(nanals,2,Nt**2)
     xens[:,4:6,:] = dzens[:].reshape(nanals,2,Nt**2)
@@ -357,82 +357,73 @@ def enstoctl(model,uens,vens,dzens):
         vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
         massfluxvrtspec, massfluxdivspec = model.ft.getvrtdivspec(umassflux,vmassflux)
         massfluxdiv = model.ft.spectogrd(massfluxdivspec)
+        massfluxvrt = model.ft.spectogrd(massfluxvrtspec)
         xens[nanal,6,:] = massfluxdiv.reshape(model.ft.Nt**2)
+        xens[nanal,7,:] = massfluxvrt.reshape(model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens):
+def ctltoens(model,xens, xens_b):
+    # for massbal adjustment see https://doi.org/10.5194/gmd-2020-299
     nanals = xens.shape[0]; Nt = model.ft.Nt
     uens = np.empty((nanals,2,Nt,Nt),dtype)
     vens = np.empty((nanals,2,Nt,Nt),dtype)
     dzens = np.empty((nanals,2,Nt,Nt),dtype)
+    uens_b = np.empty((nanals,2,Nt,Nt),dtype)
+    vens_b = np.empty((nanals,2,Nt,Nt),dtype)
+    dzens_b = np.empty((nanals,2,Nt,Nt),dtype)
     uens[:] = xens[:,0:2,:].reshape(nanals,2,Nt,Nt)
     vens[:] = xens[:,2:4,:].reshape(nanals,2,Nt,Nt)
     dzens[:] = xens[:,4:6,:].reshape(nanals,2,Nt,Nt)
+    uensmean = uens.mean(axis=0); vensmean = vens.mean(axis=0)
+    dzensmean = dzens.mean(axis=0)
+    uens_b[:]  = xens_b[:,0:2,:].reshape(nanals,2,Nt,Nt)
+    vens_b[:]  = xens_b[:,2:4,:].reshape(nanals,2,Nt,Nt)
+    dzens_b[:] = xens_b[:,4:6,:].reshape(nanals,2,Nt,Nt)
+    uensmean_b = uens.mean(axis=0); vensmean_b = vens.mean(axis=0)
+    dzensmean_b = dzens.mean(axis=0)
     for nanal in range(nanals):
-        umassflux = uens[nanal]*dzens[nanal]
-        vmassflux = vens[nanal]*dzens[nanal]
-        massfluxvrtspec, massfluxdivspec = model.ft.getvrtdivspec(umassflux,vmassflux)
-        massfluxvrtspec[:]=0
-        udivmassflux, vdivmassflux = model.ft.getuv(massfluxvrtspec, massfluxdivspec)
-        massfluxdiv = model.ft.spectogrd(massfluxdivspec)
-        massfluxdiv_new = massfluxdiv.sum(axis=0)
+        umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
+        vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
+        umassflux_b = (uens_b[nanal]*dzens_b[nanal]).sum(axis=0)
+        vmassflux_b = (vens_b[nanal]*dzens_b[nanal]).sum(axis=0)
+        #massfluxvrtspec, massfluxdivspec = model.ft.getvrtdivspec(umassflux,vmassflux)
+        #massfluxvrtspec[:]=0
+        #massfluxdiv = model.ft.spectogrd(massfluxdivspec)
+        #massfluxdiv_new = massfluxdiv.sum(axis=0)
         #print(massfluxdiv_new.min(), massfluxdiv_new.max())
         massfluxdiv_a = xens[nanal,6,:].reshape(Nt,Nt)
-        #print(massfluxdiv_a.min(), massfluxdiv_a.max())
-        # adjust winds
-        divdiff = massfluxdiv_a-massfluxdiv_new
-        divspec = model.ft.grdtospec(divdiff) 
-        vrtspec = np.zeros(divspec.shape, divspec.dtype)
-        uinc,vinc = model.ft.getuv(vrtspec, divspec)
-   #     ! case 2 (4.3.1.2) in GEOS DAS document.
-   #     ! (adjustment proportional to mass in layer)
-   #     vmass = vmass + dpanl(:,k)**2
-   #     ! case 3 (4.3.1.3) in GEOS DAS document.
-   #     ! (adjustment propotional to mass-flux div increment)
-   #     !vmass = vmass + vmassdivinc(:,k)**2
-   #  enddo
-   #  ! adjust wind field in analysis so pstend is consistent with pstend2
-   #  ! (analyzed pstend)
-!$o#mp parallel do private(k,nt,ug,vg,uginc,vginc,vrtspec,divspec)  shared(vmassdiv,vmassdivinc,dpanl)
-   #  do k=1,nlevs
-   #     ! case 2
-   #     ug = (pstend2 - pstend1)*dpanl(:,k)**2/vmass
-   #     ! case 3
-   #     !ug = (pstend2 - pstend1)*vmassdivinc(:,k)**2/vmass
-   #     call sptez_s(divspec,ug,-1) ! divgrd to divspec
-   #     vrtspec = 0_r_kind
-   #     call sptezv_s(divspec,vrtspec,uginc,vginc,1) ! div,vrt to u,v
-   #     if (nanal .eq. 1 .and. iope==0) then
-   #       print *,k,'min/max u inc (member 1)',&
-   #       minval(uginc/dpanl(:,k)),maxval(uginc/dpanl(:,k))
-   #     endif
-   #     ugtmp(:,k) = (ugtmp(:,k)*dpanl(:,k) + uginc)/dpanl(:,k)
-   #     vgtmp(:,k) = (vgtmp(:,k)*dpanl(:,k) + vginc)/dpanl(:,k)
-        # case 1: adjustment applied uniformly
-        normfact = 0.5
-        # case 2: adjustment proportional to vmassdivinc
-        uinc = uinc/normfact; vinc = vinc/normfact
-        uens[nanal] = (uens[nanal]*dzens[nanal] + 0.5*uinc[np.newaxis,...])/dzens[nanal]
-        vens[nanal] = (vens[nanal]*dzens[nanal] + 0.5*vinc[np.newaxis,...])/dzens[nanal]
-        #print(nanal,uens[nanal].min(),uens[nanal].max())
+        massfluxvrt_a = xens[nanal,7,:].reshape(Nt,Nt)
+        massfluxvrtspec = model.ft.grdtospec(massfluxvrt_a)
+        massfluxdivspec = model.ft.grdtospec(massfluxdiv_a)
+        umassflux_a, vmassflux_a = model.ft.getuv(massfluxvrtspec, massfluxdivspec)
+        # uniform distribution
+        incmask = np.ones((2,Nt,Nt),uens.dtype)
+        # proportional to wind increment magnitude
+        #incmask = np.sqrt((uens[nmem]-uens_b[nmem])**2+(vens[nmem]-vens_b[nmem])**2)
+        uinc = (umassflux - umassflux_a)/(dzens[nanal]*incmask).sum(axis=0)
+        print(umassflux.shape, uinc.shape)
+        uens[nanal] += uinc[np.newaxis,:,:]*incmask
+        vinc = (vmassflux - vmassflux_a)/(dzens[nanal]*incmask).sum(axis=0)
+        vens[nanal] += vinc[np.newaxis,:,:]*incmask
         # recompute
-        #umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
-        #vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
-        #massfluxvrtspec, massfluxdivspec = model.ft.getvrtdivspec(umassflux,vmassflux)
-        #massfluxdiv_new = model.ft.spectogrd(massfluxdivspec)
-        #print(massfluxdiv_new.min(), massfluxdiv_new.max())
-        #import matplotlib.pyplot as plt
-        #fig = plt.figure()
-        #plt.subplot(1,2,1)
-        #plt.imshow(massfluxdiv_new,cmap=plt.cm.bwr,interpolation="nearest")
-        #plt.title('implied massfluxdiv')
-        #plt.colorbar()
-        #plt.subplot(1,2,2)
-        #plt.imshow(massfluxdiv_a,cmap=plt.cm.bwr,interpolation="nearest")
-        #plt.title('analyzed massfluxdiv')
-        #plt.colorbar()
-        #plt.savefig('test.png')
-        #raise SystemExit
+        umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
+        vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
+        massfluxvrtspec, massfluxdivspec = model.ft.getvrtdivspec(umassflux,vmassflux)
+        massfluxdiv_new = model.ft.spectogrd(massfluxdivspec)
+        print(massfluxdiv_new.min(), massfluxdiv_new.max())
+        print(massfluxdiv_a.min(), massfluxdiv_a.max())
+        import matplotlib.pyplot as plt
+        fig = plt.figure()
+        plt.subplot(1,2,1)
+        plt.imshow(massfluxdiv_new,cmap=plt.cm.bwr,interpolation="nearest")
+        plt.title('implied massfluxdiv')
+        plt.colorbar()
+        plt.subplot(1,2,2)
+        plt.imshow(massfluxdiv_a,cmap=plt.cm.bwr,interpolation="nearest")
+        plt.title('analyzed massfluxdiv')
+        plt.colorbar()
+        plt.savefig('test.png')
+        raise SystemExit
         
     return uens,vens,dzens
 
@@ -509,7 +500,8 @@ for ntime in range(nassim):
     # EnKF update
     # create state vector.
     xens = enstoctl(model,uens,vens,dzens)
-    xensmean_b = xens.mean(axis=0)
+    xens_b = xens.copy()
+    xensmean_b = xens_b.mean(axis=0)
     xprime = xens-xensmean_b
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
@@ -552,7 +544,7 @@ for ntime in range(nassim):
         xens = xprime + xensmean_a
 
     # back to 3d state vector
-    uens,vens,dzens = ctltoens(model,xens)
+    uens,vens,dzens = ctltoens(model,xens,xens_b)
     np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
     if fix_totmass:
         for nmem in range(nanals):
