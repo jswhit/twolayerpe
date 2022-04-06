@@ -362,7 +362,7 @@ def enstoctl(model,uens,vens,dzens):
         xens[nanal,7,:] = massfluxvrt.reshape(model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens, xens_b):
+def ctltoens(model,xens, xens_b, fsprd):
     # for massbal adjustment see https://doi.org/10.5194/gmd-2020-299
     nanals = xens.shape[0]; Nt = model.ft.Nt
     uens = np.empty((nanals,2,Nt,Nt),dtype)
@@ -379,8 +379,9 @@ def ctltoens(model,xens, xens_b):
     uens_b[:]  = xens_b[:,0:2,:].reshape(nanals,2,Nt,Nt)
     vens_b[:]  = xens_b[:,2:4,:].reshape(nanals,2,Nt,Nt)
     dzens_b[:] = xens_b[:,4:6,:].reshape(nanals,2,Nt,Nt)
-    uensmean_b = uens.mean(axis=0); vensmean_b = vens.mean(axis=0)
-    dzensmean_b = dzens.mean(axis=0)
+    uensmean_b = uens_b.mean(axis=0); vensmean_b = vens_b.mean(axis=0)
+    dzensmean_b = dzens_b.mean(axis=0)
+    #incmask = np.sqrt((uensmean-uensmean_b)**2+(vensmean-vensmean_b)**2)
     for nanal in range(nanals):
         umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
         vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
@@ -397,9 +398,11 @@ def ctltoens(model,xens, xens_b):
         massfluxdivspec = model.ft.grdtospec(massfluxdiv_a)
         umassflux_a, vmassflux_a = model.ft.getuv(massfluxvrtspec, massfluxdivspec)
         # uniform distribution
-        incmask = np.ones((2,Nt,Nt),uens.dtype)
+        #incmask = np.ones((2,Nt,Nt),uens.dtype)
         # proportional to wind increment magnitude
-        #incmask = np.sqrt((uens[nmem]-uens_b[nmem])**2+(vens[nmem]-vens_b[nmem])**2)
+        incmask = 0.01+np.sqrt((uens[nanal]-uens_b[nanal])**2+(vens[nanal]-vens_b[nanal])**2)
+        #incmask = np.abs(dzens[nanal]-dzens_b[nanal])
+        print(incmask.min(), incmask.max())
         uinc = (umassflux - umassflux_a)/(dzens[nanal]*incmask).sum(axis=0)
         print(umassflux.shape, uinc.shape)
         uinc = uinc[np.newaxis,:,:]*incmask
@@ -548,7 +551,7 @@ for ntime in range(nassim):
         xens = xprime + xensmean_a
 
     # back to 3d state vector
-    uens,vens,dzens = ctltoens(model,xens,xens_b)
+    uens,vens,dzens = ctltoens(model,xens,xens_b,fsprd)
     np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
     if fix_totmass:
         for nmem in range(nanals):
