@@ -58,7 +58,7 @@ profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
-read_restart = True
+read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
 posterior_stats = False
 precision = 'float32'
@@ -136,8 +136,7 @@ if not read_restart:
     dz_climo = nc_climo.variables['dz']
     indxran = rsics.choice(u_climo.shape[0],size=nanals,replace=False)
 else:
-    filein = 'letkf16th6h_1100_nobaldiv_inf0.75_imperfect.nc'
-    #ncinit = Dataset('%s.nc' % exptname, mode='r', format='NETCDF4_CLASSIC')
+    ncinit = Dataset('%s.nc' % exptname, mode='r', format='NETCDF4_CLASSIC')
     ncinit = Dataset(filein)
     ncinit.set_auto_mask(False)
     uens[:] = ncinit.variables['u_b'][-1,...]
@@ -370,6 +369,8 @@ def ctltoens(model,xens, xens_b, fsprd):
     dzens = np.empty((nanals,2,Nt,Nt),dtype)
     uens_b = np.empty((nanals,2,Nt,Nt),dtype)
     vens_b = np.empty((nanals,2,Nt,Nt),dtype)
+    uens_sprd = np.empty((2,Nt,Nt),dtype)
+    vens_sprd = np.empty((2,Nt,Nt),dtype)
     dzens_b = np.empty((nanals,2,Nt,Nt),dtype)
     uens[:] = xens[:,0:2,:].reshape(nanals,2,Nt,Nt)
     vens[:] = xens[:,2:4,:].reshape(nanals,2,Nt,Nt)
@@ -378,15 +379,17 @@ def ctltoens(model,xens, xens_b, fsprd):
     dzensmean = dzens.mean(axis=0)
     uens_b[:]  = xens_b[:,0:2,:].reshape(nanals,2,Nt,Nt)
     vens_b[:]  = xens_b[:,2:4,:].reshape(nanals,2,Nt,Nt)
+    uens_sprd[:]  = fsprd[0:2,:].reshape(2,Nt,Nt)
+    vens_sprd[:]  = fsprd[2:4,:].reshape(2,Nt,Nt)
     dzens_b[:] = xens_b[:,4:6,:].reshape(nanals,2,Nt,Nt)
     uensmean_b = uens_b.mean(axis=0); vensmean_b = vens_b.mean(axis=0)
     dzensmean_b = dzens_b.mean(axis=0)
-    #incmask = np.sqrt((uensmean-uensmean_b)**2+(vensmean-vensmean_b)**2)
+    incmask = np.sqrt(uens_sprd + vens_sprd)
     for nanal in range(nanals):
         umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
         vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
-        umassflux_b = (uens_b[nanal]*dzens_b[nanal]).sum(axis=0)
-        vmassflux_b = (vens_b[nanal]*dzens_b[nanal]).sum(axis=0)
+        #umassflux_b = (uens_b[nanal]*dzens_b[nanal]).sum(axis=0)
+        #vmassflux_b = (vens_b[nanal]*dzens_b[nanal]).sum(axis=0)
         #massfluxvrtspec, massfluxdivspec = model.ft.getvrtdivspec(umassflux,vmassflux)
         #massfluxvrtspec[:]=0
         #massfluxdiv = model.ft.spectogrd(massfluxdivspec)
@@ -400,37 +403,36 @@ def ctltoens(model,xens, xens_b, fsprd):
         # uniform distribution
         #incmask = np.ones((2,Nt,Nt),uens.dtype)
         # proportional to wind increment magnitude
-        incmask = 0.01+np.sqrt((uens[nanal]-uens_b[nanal])**2+(vens[nanal]-vens_b[nanal])**2)
+        #incmask = 0.01+np.sqrt((uens[nanal]-uens_b[nanal])**2+(vens[nanal]-vens_b[nanal])**2)
         #incmask = np.abs(dzens[nanal]-dzens_b[nanal])
-        print(incmask.min(), incmask.max())
+        #print(incmask.min(), incmask.max())
         uinc = (umassflux - umassflux_a)/(dzens[nanal]*incmask).sum(axis=0)
-        print(umassflux.shape, uinc.shape)
         uinc = uinc[np.newaxis,:,:]*incmask
-        print(uinc.min(), uinc.max())
+        #print(uinc.min(), uinc.max())
         uens[nanal] -= uinc
         vinc = (vmassflux - vmassflux_a)/(dzens[nanal]*incmask).sum(axis=0)
         vinc = vinc[np.newaxis,:,:]*incmask
-        print(vinc.min(), vinc.max())
+        #print(vinc.min(), vinc.max())
         vens[nanal] -= vinc
         # recompute
-        umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
-        vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
-        massfluxvrtspec, massfluxdivspec = model.ft.getvrtdivspec(umassflux,vmassflux)
-        massfluxdiv_new = model.ft.spectogrd(massfluxdivspec)
-        print(massfluxdiv_new.min(), massfluxdiv_new.max())
-        print(massfluxdiv_a.min(), massfluxdiv_a.max())
-        import matplotlib.pyplot as plt
-        fig = plt.figure()
-        plt.subplot(1,2,1)
-        plt.imshow(massfluxdiv_new,cmap=plt.cm.bwr,interpolation="nearest")
-        plt.title('implied massfluxdiv')
-        plt.colorbar()
-        plt.subplot(1,2,2)
-        plt.imshow(massfluxdiv_a,cmap=plt.cm.bwr,interpolation="nearest")
-        plt.title('analyzed massfluxdiv')
-        plt.colorbar()
-        plt.savefig('test.png')
-        raise SystemExit
+        #umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
+        #vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
+        #massfluxvrtspec, massfluxdivspec = model.ft.getvrtdivspec(umassflux,vmassflux)
+        #massfluxdiv_new = model.ft.spectogrd(massfluxdivspec)
+        #print(massfluxdiv_new.min(), massfluxdiv_new.max())
+        #print(massfluxdiv_a.min(), massfluxdiv_a.max())
+        #import matplotlib.pyplot as plt
+        #fig = plt.figure()
+        #plt.subplot(1,2,1)
+        #plt.imshow(massfluxdiv_new,cmap=plt.cm.bwr,interpolation="nearest")
+        #plt.title('implied massfluxdiv')
+        #plt.colorbar()
+        #plt.subplot(1,2,2)
+        #plt.imshow(massfluxdiv_a,cmap=plt.cm.bwr,interpolation="nearest")
+        #plt.title('analyzed massfluxdiv')
+        #plt.colorbar()
+        #plt.savefig('test.png')
+        #raise SystemExit
         
     return uens,vens,dzens
 
