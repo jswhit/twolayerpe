@@ -355,6 +355,8 @@ def enstoctl(model,uens,vens,dzens):
         umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
         vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
         massfluxvrtspec, massfluxdivspec = model.ft.getvrtdivspec(umassflux,vmassflux)
+        #massfluxvrtspec = model.ft.invlap*massfluxvrtspec
+        #massfluxdivspec = model.ft.invlap*massfluxdivspec
         massfluxdiv = model.ft.spectogrd(massfluxdivspec)
         massfluxvrt = model.ft.spectogrd(massfluxvrtspec)
         xens[nanal,6,:] = massfluxdiv.reshape(model.ft.Nt**2)
@@ -385,6 +387,7 @@ def ctltoens(model,xens, xens_b, fsprd):
     uensmean_b = uens_b.mean(axis=0); vensmean_b = vens_b.mean(axis=0)
     dzensmean_b = dzens_b.mean(axis=0)
     incmask = np.sqrt(uens_sprd + vens_sprd)
+    #incmask = np.ones((2,Nt,Nt),uens.dtype)
     for nanal in range(nanals):
         umassflux = (uens[nanal]*dzens[nanal]).sum(axis=0)
         vmassflux = (vens[nanal]*dzens[nanal]).sum(axis=0)
@@ -399,6 +402,8 @@ def ctltoens(model,xens, xens_b, fsprd):
         massfluxvrt_a = xens[nanal,7,:].reshape(Nt,Nt)
         massfluxvrtspec = model.ft.grdtospec(massfluxvrt_a)
         massfluxdivspec = model.ft.grdtospec(massfluxdiv_a)
+        #massfluxvrtspec = model.ft.lap*massfluxvrtspec
+        #massfluxdivspec = model.ft.lap*massfluxdivspec
         umassflux_a, vmassflux_a = model.ft.getuv(massfluxvrtspec, massfluxdivspec)
         # uniform distribution
         #incmask = np.ones((2,Nt,Nt),uens.dtype)
@@ -587,6 +592,7 @@ for ntime in range(nassim):
         for nanal in range(nanals): 
             uens[nanal],vens[nanal],dzens[nanal] = model.advance(uens[nanal],vens[nanal],dzens[nanal],grid=True)
             masstend_diag+=model.masstendvar/nanals
+            raise SystemExit
     else:
         # use joblib to run ens members on different cores (N_JOBS env var sets number of tasks).
         results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
