@@ -52,7 +52,7 @@ diff_efold = None # use diffusion from climo file
 #div2_diff_efold=1800.
 div2_diff_efold=1.e30
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
-baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
+baldiv = False # compute balanced divergence (if False, assign div to unbalanced part)
 posterior_stats = False
 nassim = 1600 # assimilation times to run
 nanals = 20 # ensemble members
@@ -338,26 +338,6 @@ def gethofx(uens,vens,zsfcens,zmidens,indxob,nanals,nobs):
         hxens[nanal,4*nobs:5*nobs] = zsfcens[nanal,...].ravel()[indxob] # interface height obs
         hxens[nanal,5*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
-
-def balmem(N,L,dt,umem,vmem,dzmem,nodiv=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
-           theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-           zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
-    ft = Fouriert(N,L,threads=1)
-    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
-    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
-    vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
-    vrt = ft.spectogrd(vrtspec)
-    pv = (vrt + model.f)/dzmem
-    dzbal, vrtbal, divbal = pvinvert(model,pv,dzin=dzmem,nodiv=nodiv,\
-                            nitermax=nitermax,relax=relax,eps=eps,verbose=verbose)
-    vrtspec = ft.grdtospec(vrtbal)
-    if nodiv:
-        # no balanced divergence.
-        divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
-    else:
-        divspec = ft.grdtospec(divbal)
-    ubal, vbal = ft.getuv(vrtspec,divspec)
-    return ubal,vbal,dzbal
 
 def balens(model,uens,vens,dzens,linbal=False,baldiv=False,nitermax=1000,divguess=True,relax=0.015,eps=1.e-4,verbose=False):
     if not baldiv:
