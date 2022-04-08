@@ -152,6 +152,32 @@ class TwoLayer(object):
             div[1]=div[1]-div[1].mean()
             return div
 
+    def nlbalinc(self,vrtspecb,vrtspec,linbal=False):
+        """computes linearized incremental balanced layer thickness given vorticity (from nonlinear bal eqn)"""
+        dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
+        psispec = self.ft.invlap*vrtspec
+        if linbal:
+            mspec = self.f*psispec
+        else:
+            psispecb = self.ft.invlap*vrtspecb
+            psixx = self.ft.spectogrd(-self.ft.k**2*psispec)
+            psixxb = self.ft.spectogrd(-self.ft.k**2*psispecb)
+            psiyy = self.ft.spectogrd(-self.ft.l**2*psispec)
+            psiyyb = self.ft.spectogrd(-self.ft.l**2*psispecb)
+            psixy = self.ft.spectogrd(self.ft.k*self.ft.l*psispec)
+            psixyb = self.ft.spectogrd(self.ft.k*self.ft.l*psispecb)
+            tmpspec = self.f*vrtspec + 2.*self.ft.grdtospec(psixxb*psiyy + psixx*psiyyb - 2.*psixyb*psixy)
+            mspec = self.ft.invlap*tmpspec
+        dzspec[0,...] = mspec[0,...]/self.theta1
+        dzspec[1,...] = (mspec[1,:]-mspec[0,...])/self.delth
+        dzspec[0,...] = dzspec[0,...] - dzspec[1,...]
+        dzspec = (self.theta1/self.grav)*dzspec # convert from exner function to height units (m)
+        # set area mean in grid space to zero
+        dz = self.ft.spectogrd(dzspec)
+        dz[0,...] = dz[0,...] - dz[0,...].mean()
+        dz[1,...] = dz[1,...] - dz[1,...].mean()
+        return dz
+
     def nlbalance(self,vrtspec,div=False, dz1mean=None, dz2mean=None,\
                   nitermax=1000, relax=0.01, eps=1.e-2, verbose=False, linbal=False):
         """computes balanced layer thickness given vorticity (from nonlinear bal eqn)"""
@@ -268,7 +294,7 @@ class TwoLayer(object):
                                   nitermax=nitermax, relax=relax, eps=eps, verbose=verbose)
         return dz,vrt,div
 
-    def gettend(self,vrtspec,divspec,dzspec):
+    def gettend(self,vrtspec,divspec,dzspec,masstend_diag=False):
         # compute tendencies.
         # first, transform fields from spectral space to grid space.
         vrt = self.ft.spectogrd(vrtspec)
@@ -293,6 +319,10 @@ class TwoLayer(object):
         # horizontal mass flux contribution to continuity
         tmpg1 = u*dz; tmpg2 = v*dz
         tmpspec, ddzdtspec = self.ft.getvrtdivspec(tmpg1,tmpg2)
+        if masstend_diag:
+            # mean abs total mass tend (meters/hour)
+            self.masstendvar = 3600.*np.abs((self.ft.spectogrd(ddzdtspec)).sum(axis=0)).mean()
+            #print(self.masstendvar)
         ddzdtspec *= -1
         # diabatic mass flux contribution to continuity
         tmpspec = self.ft.grdtospec(massflux)
@@ -313,10 +343,10 @@ class TwoLayer(object):
         # update state using 4th order runge-kutta
         dt = self.dt
         k1vrt,k1div,k1thk = \
-        self.gettend(vrtspec,divspec,dzspec)
-        masstendspec = k1thk.sum(axis=0)
+        self.gettend(vrtspec,divspec,dzspec,masstend_diag=True)
+        #masstendspec = k1thk.sum(axis=0)
         # parameter measuring vertically integrated mass tend amplitude (external mode imbalance)
-        self.masstendvar = ((masstendspec*np.conjugate(masstendspec)).real).sum() 
+        #self.masstendvar = ((masstendspec*np.conjugate(masstendspec)).real).sum() 
         k2vrt,k2div,k2thk = \
         self.gettend(vrtspec+0.5*dt*k1vrt,divspec+0.5*dt*k1div,dzspec+0.5*dt*k1thk)
         k3vrt,k3div,k3thk = \
@@ -334,11 +364,11 @@ class TwoLayer(object):
         # that is constant over the time interval.
         dt = self.dt
         k1vrt,k1div,k1thk = \
-        self.gettend(vrtspec,divspec,dzspec)
+        self.gettend(vrtspec,divspec,dzspec,masstend_diag=True)
         k1vrt += fvrtspec; k1div += fdivspec; k1thk += fdzspec
-        masstendspec = k1thk.sum(axis=0)
+        #masstendspec = k1thk.sum(axis=0)
         # parameter measuring vertically integrated mass tend amplitude (external mode imbalance)
-        self.masstendvar = ((masstendspec*np.conjugate(masstendspec)).real).sum() 
+        #self.masstendvar = ((masstendspec*np.conjugate(masstendspec)).real).sum() 
         k2vrt,k2div,k2thk = \
         self.gettend(vrtspec+0.5*dt*k1vrt,divspec+0.5*dt*k1div,dzspec+0.5*dt*k1thk)
         k2vrt += fvrtspec; k2div += fdivspec; k2thk += fdzspec
