@@ -55,7 +55,7 @@ div2_diff_efold=1.e30
 fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
 baldiv = True # compute balanced divergence (if False, assign div to unbalanced part)
 posterior_stats = False
-nassim = 400 # assimilation times to run
+nassim = 1600 # assimilation times to run
 nanals = 20 # ensemble members
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
@@ -586,7 +586,7 @@ for ntime in range(nassim):
      zsfc_errav,zsfc_sprdav,vecwind1_errav,vecwind1_sprdav,ke_errav,ke_sprdav,masstend_diag,totmass))
 
     # EnKF update for balanced part.
-    xens = enstoctl(model,uens,vens,dzens,linbal=linbal,baldiv=baldiv2)
+    xens = enstoctl(model,uens,vens,dzens,nobal=nobal,linbal=linbal,baldiv=baldiv2)
     xensmean_b = xens.mean(axis=0)
     xprime = xens-xensmean_b
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
@@ -600,7 +600,7 @@ for ntime in range(nassim):
         if profile: print('cpu time for EnKF update',t2-t1)
         xens = inflation(xens,xensmean_b,fsprd,covinflate1,covinflate2)
 
-    uens,vens,dzens = ctltoens(model,xens,linbal=linbal,baldiv=baldiv2)
+    uens,vens,dzens = ctltoens(model,xens,nobal=nobal,linbal=linbal,baldiv=baldiv2)
 
     # make sure there is no negative layer thickness in analysis
     np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
