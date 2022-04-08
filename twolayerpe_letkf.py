@@ -11,12 +11,11 @@ from joblib import Parallel, delayed
 # Relaxation to prior spread
 # inflation, or Hodyss and Campbell inflation.
 # random observing network.
-
-# this version uses same wts (and localization) for balanced and unbalanced part
+# Balanced/unbalanced partitioning.
 
 if len(sys.argv) == 1:
    msg="""
-python twolayerpe_enkf_bal.py hcovlocal_scale <covinflate1 covinflate2>
+python twolayerpe_letkf.py hcovlocal_scale <covinflate1 covinflate2>
    hcovlocal_scale = horizontal localization scale in km
    no vertical localization.
    covinflate1,covinflate2: inflation parameters (optional).
@@ -69,7 +68,7 @@ filename_climo = 'twolayerpe_N64_6hrly.nc' # file name for forecast model climo
 # perfect model
 #filename_truth = filename_climo
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
-nobal = False # no balance operator
+nobal = False # no balanced/unbalanced partitioning of control vector
 linbal = False # use linear (geostrophic) balance instead of nonlinear (gradient) balance.
 dzmin = 10. # min layer thickness allowed
 
@@ -433,7 +432,7 @@ def enstoctl(model,uens,vens,dzens,nobal=False,linbal=False,baldiv=False):
         xens[:,4:6,:] = dzens[:].reshape(nanals,2,model.ft.Nt**2)
     else:
         if n_jobs == 0:
-            uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,linbal=linbal,baldiv=baldiv2)
+            uens_bal,vens_bal,dzens_bal = balens(model,uens,vens,dzens,linbal=linbal,baldiv=baldiv)
         else:
             results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],linbal=linbal,baldiv=baldiv,divguess=True,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag=model.tdrag,tdiab=model.tdiab,umax=model.umax,jetexp=model.jetexp,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
             uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
@@ -451,7 +450,7 @@ def enstoctl(model,uens,vens,dzens,nobal=False,linbal=False,baldiv=False):
         xens[:,8:10,:] = dzens_unbal[:].reshape(nanals,2,model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens,nobal=False,linbal=linbal,baldiv=baldiv):
+def ctltoens(model,xens,nobal=False,linbal=False,baldiv=False):
     nanals = xens.shape[0]
     if nobal:
         uens = np.empty((nanals,2,Nt,Nt),dtype)
