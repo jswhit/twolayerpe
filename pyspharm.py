@@ -163,14 +163,28 @@ class Spharmt(object):
         return self.lap*self.rsphere*vrtspec, self.lap*self.rsphere*divspec
     def getgrad(self,dataspec):
         """compute gradient vector from spectral coeffs"""
+        #divspec = np.ascontiguousarray(dataspec, dtype=np.complex)
+        #vrtspec = np.zeros(divspec.shape, dtype=np.complex)
+        #if dataspec.ndim == 1:
+        #    gradx = np.empty((self.nlats,self.nlons), dtype=np.float)
+        #    grady = np.empty((self.nlats,self.nlons), dtype=np.float)
+        #    self._shtns.SHsphtor_to_spat(vrtspec,divspec,gradx,grady)
+        #elif dataspec.ndim == 2:
+        #    gradx = np.empty((dataspec.shape[0],self.nlats,self.nlons), dtype=np.float)
+        #    grady = np.empty((dataspec.shape[0],self.nlats,self.nlons), dtype=np.float)
+        #    for k,div in enumerate(divspec):
+        #        vrt = vrtspec[k] 
+        #        self._shtns.SHsphtor_to_spat(vrt,div,gradx[k],grady[k])
+        #else:
+        #    raise IndexError('dataspec must be 1d or 2d')
         dataspec = np.ascontiguousarray(dataspec, dtype=np.complex)
         if dataspec.ndim == 1:
-            gradx,grady = self._shtns.synth_grad(dataspec)
+            grady,gradx = self._shtns.synth_grad(dataspec)
         elif dataspec.ndim == 2:
             gradx = np.empty((dataspec.shape[0],self.nlats,self.nlons), dtype=np.float)
             grady = np.empty((dataspec.shape[0],self.nlats,self.nlons), dtype=np.float)
             for k,spec in enumerate(dataspec):
-                gradx[k],grady[k] = self._shtns.synth_grad(spec)
+                grady[k],gradx[k] = self._shtns.synth_grad(spec)
         else:
             raise IndexError('dataspec must be 1d or 2d')
-        return gradx/self.rsphere, grady/self.rsphere
+        return gradx/self.rsphere, -grady/self.rsphere
