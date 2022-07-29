@@ -48,6 +48,7 @@ filename_climo = 'twolayerpe_N64_6hrly.nc' # file name for forecast model climo
 filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
 linbal = False # use linear (geostrophic) balance instead of nonlinear (gradient) balance.
 dzmin = 10. # min layer thickness allowed
+inflate_before=True # inflate before balance operator applied
 
 profile = False # turn on profiling?
 
@@ -485,7 +486,7 @@ for ntime in range(nassim):
                 xprime_a[:, k, n] = np.dot(wts[n].T, xprime_b[:, k, n])
         t2 = time.time()
         if profile: print('cpu time for EnKF update',t2-t1)
-        xprime_a = inflation(xprime_a,xprime_b,covinflate)
+        if inflate_before: xprime_a = inflation(xprime_a,xprime_b,covinflate)
 
 
     uensmean_balinc = np.empty_like(uensmean_b); vensmean_balinc = np.empty_like(vensmean_b)
@@ -502,6 +503,25 @@ for ntime in range(nassim):
     # get total pertubation increments from unbalanced/balanced increments
     # reconstruct total analysis fields
     upertinc,vpertinc,dzpertinc = ctltoens(model,xprime_a-xprime_b,vrtspec_ensmean_b,linbal=linbal)
+    if not inflate_before: 
+        upert = upert_b + upertinc 
+        vpert = vpert_b + vpertinc 
+        dzpert = dzpert_b + dzpertinc 
+        xens = np.empty((nanals,6,Nt**2),dtype)
+        xens[:,0:2,:] = upert[:].reshape(nanals,2,model.ft.Nt**2)
+        xens[:,2:4,:] = vpert[:].reshape(nanals,2,model.ft.Nt**2)
+        xens[:,4:6,:] = dzpert[:].reshape(nanals,2,model.ft.Nt**2)
+        xens_b = np.empty((nanals,6,Nt**2),dtype)
+        xens_b[:,0:2,:] = upert_b[:].reshape(nanals,2,model.ft.Nt**2)
+        xens_b[:,2:4,:] = vpert_b[:].reshape(nanals,2,model.ft.Nt**2)
+        xens_b[:,4:6,:] = dzpert_b[:].reshape(nanals,2,model.ft.Nt**2)
+        xprime_a = inflation(xens,xens_b,covinflate)
+        upert[:] = xprime_a[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        vpert[:] = xprime_a[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        dzpert[:] = xprime_a[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
+        upertinc = upert - upert_b
+        vpertinc = vpert - vpert_b
+        dzpertinc = dzpert - dzpert_b
     uens = upert_b + uensmean_b + upertinc + uensmean_balinc + uensmean_unbalinc
     vens = vpert_b + vensmean_b + vpertinc + vensmean_balinc + vensmean_unbalinc
     dzens = dzpert_b + dzensmean_b + dzpertinc + dzensmean_balinc + dzensmean_unbalinc
