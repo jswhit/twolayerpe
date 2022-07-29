@@ -476,8 +476,8 @@ for ntime in range(nassim):
 
     if not debug_model: 
         # update state vector using letkf weights
-        xensmean_inc = np.empty(xprime_b.shape[1:],xprime_b.dtype)
-        xprime_a = np.empty_like(xprime_b)
+        xensmean_inc = np.zeros(xprime_b.shape[1:],xprime_b.dtype)
+        xprime_a = xprime_b.copy()
         #for k in range(4): # only update balanced u,v
         for k in range(xprime_b.shape[1]):
             for n in range(model.ft.Nt**2):
