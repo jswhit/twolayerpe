@@ -92,6 +92,23 @@ def letkfwts_kernel(hxens,obs,oberrs,covlocal):
     wts = calcwts(hxprime[:, mask], Rinv, ominusf)
     return wts
 
+def letkfwts_kernel2(hxens,obs,oberrs,covlocal):
+    nanals, nobs = hxens.shape
+    hxmean = hxens.mean(axis=0)
+    hxprime = hxens - hxmean
+    wts = np.empty((nanals,nanals),hxens.dtype)
+    def calcwts(hx, Rinv, ominusf):
+        YbRinv = np.dot(hx, Rinv)
+        pa = (nanals - 1) * np.eye(nanals) + np.dot(YbRinv, hx.T)
+        evals, eigs = eigh(pa)
+        painv = np.dot(np.dot(eigs, np.diag(np.sqrt(1.0 / evals))), eigs.T)
+        tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
+        return np.sqrt(nanals - 1) * painv, tmp
+    mask = np.logical_and(covlocal > 1.e-10, oberrs < 1.e10)
+    Rinv = np.diag(covlocal[mask] / oberrs[mask])
+    ominusf = (obs-hxmean)[mask]
+    return calcwts(hxprime[:, mask], Rinv, ominusf)
+
 def letkfwts_compute(hxens,obs,oberrs,covlocal,n_jobs):
     ndim = covlocal.shape[-1]  
     nanals,nobs = hxens.shape
@@ -105,6 +122,21 @@ def letkfwts_compute(hxens,obs,oberrs,covlocal,n_jobs):
         for n in range(ndim):
              wts[n] = results[n]
     return wts
+
+def letkfwts_compute2(hxens,obs,oberrs,covlocal,n_jobs):
+    ndim = covlocal.shape[-1]  
+    nanals,nobs = hxens.shape
+    wts = np.empty((ndim,nanals,nanals),hxens.dtype)
+    wtsmean = np.empty((ndim,nanals),hxens.dtype)
+    if not n_jobs:
+        for n in range(ndim):
+            wts[n],wtsmean[n] = letkfwts_kernel2(hxens,obs,oberrs,covlocal[:,n])
+    else:
+        # use joblib to distribute over n_jobs tasks
+        results = Parallel(n_jobs=n_jobs)(delayed(letkfwts_kernel2)(hxens,obs,oberrs,covlocal[:,n]) for n in range(ndim))
+        for n in range(ndim):
+             wts[n],wtsmean[n] = results[n]
+    return wts,wtsmean
 
 def serial_update(xens, hxens, obs, oberrs, covlocal, obcovlocal):
     """serial potter method"""
