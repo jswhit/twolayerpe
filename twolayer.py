@@ -152,7 +152,96 @@ class TwoLayer(object):
             div[1]=div[1]-div[1].mean()
             return div
 
-    def nlbalinc(self,vrtspecb,vrtspec,linbal=False):
+    def _nlbalinc_tend(self,dvrtdt,psixxb,psiyyb,psixyb,linbal=False):
+        # solve tendency of nonlinear balance eqn to get layer thickness tendency
+        # given vorticity tendency (psixx,psiyy,psixy already computed)
+        dvrtspecdt = self.ft.grdtospec(dvrtdt)
+        dpsispecdt = self.ft.invlap*dvrtspecdt
+        if linbal:
+            mspec = self.f*dpsispecdt
+        else:
+            dpsixxdt = self.ft.spectogrd(-self.ft.k**2*dpsispecdt)
+            dpsiyydt = dvrtdt - dpsixxdt
+            dpsixydt = self.ft.spectogrd(-self.ft.k*self.ft.l*dpsispecdt)
+            tmpspec = self.f*dvrtspecdt + 2.*self.ft.grdtospec(psixxb*dpsiyydt + dpsixxdt*psiyyb - 2.*psixyb*dpsixydt)
+            mspec = self.ft.invlap*tmpspec
+        dzspec = np.zeros(mspec.shape, mspec.dtype)
+        dzspec[0,...] = mspec[0,...]/self.theta1
+        dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(self.theta2-self.theta1)
+        dzspec[0,...] -= dzspec[1,...]
+        dzspec = (self.theta1/self.grav)*dzspec # convert from exner function to height units (m)
+        ddzdt = self.ft.spectogrd(dzspec)
+        return ddzdt
+
+    def _nlbalinc_div(self,vrtspecb,divspecb,dzb,vrtspec,dz,div=None,linbal=False,\
+                   nitermax=1000, relax=0.01, eps=1.e-2, verbose=False):
+        # iteratively solve for balanced divergence.
+        dzx,dzy = self.ft.getgrad(dz)
+        psispec = self.ft.invlap*vrtspec
+        psixx = self.ft.spectogrd(-self.ft.k**2*psispec)
+        psiyy = self.ft.spectogrd(-self.ft.l**2*psispec)
+        psixy = self.ft.spectogrd(-self.ft.k*self.ft.l*psispec)
+        urot = self.ft.spectogrd(-self.ft.il*psispec); vrot = self.ft.spectogrd(self.ft.ik*psispec)
+        vrt = self.ft.spectogrd(vrtspec)
+        psispecb = self.ft.invlap*vrtspecb
+        psixxb = self.ft.spectogrd(-self.ft.k**2*psispecb)
+        psiyyb = self.ft.spectogrd(-self.ft.l**2*psispecb)
+        psixyb = self.ft.spectogrd(self.ft.k*self.ft.l*psispecb)
+
+# compute ub,vb,dzbx,dzby,divb
+        ub, vb = self.ft.getuv(vrtspecb,divspecb)
+        dzbx,dzby = self.ft.getgrad(dzb)
+        divb = self.ft.spectogrd(divspecb)
+        vrtb = self.ft.spectogrd(vrtspecb)
+        if div is None:
+            div = np.zeros_like(divb)
+
+        # get balanced divergence computed iterative algorithm
+        # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
+        # start iteration with div=0
+        converged=False
+        for niter in range(nitermax):
+            divspec = self.ft.grdtospec(div)
+            chispec = self.ft.invlap*divspec
+            udivspec = self.ft.ik*chispec; vdivspec = self.ft.il*chispec
+            udiv = self.ft.spectogrd(udivspec); vdiv = self.ft.spectogrd(vdivspec)
+            u = urot+udiv; v = vrot+vdiv
+            massflux = -dz[1]/self.tdiab
+            # horizontal vorticity flux
+            tmp1 = u*(vrtb+self.f) + ub*vrt
+            tmp2 = v*(vrtb+self.f) + vb*vrt
+            # add lower layer drag contribution
+            tmp1[0] += v[0]/self.tdrag
+            tmp2[0] += -u[0]/self.tdrag
+            # compute vort flux contributions to vorticity and divergence tend.
+            ddivdtspec, dvrtdtspec = self.ft.getvrtdivspec(tmp1,tmp2)
+            dvrtdtspec *= -1
+            dvrtdtspec += self.hyperdiff*vrtspec
+            dvrtdt = self.ft.spectogrd(dvrtdtspec)
+            # infer layer thickness tendency from d/dt of balance eqn.
+            ddzdt = self._nlbalinc_tend(dvrtdt,psixxb,psiyyb,psixyb,linbal=linbal)
+            # new estimate of divergence from continuity eqn
+            tmp1[0] = massflux; tmp1[1] = -massflux
+            divnew = -(1./dzb)*(ddzdt + ub*dzx + u*dzbx + vb*dzy + v*dzby + dz*divb + dzb*div- tmp1)
+            divnew = divnew - divnew.mean() # remove area mean
+            divdiff = divnew-div
+            div = div + relax*divdiff
+            divdiffmean = np.sqrt((divdiff**2).mean())
+            divmean = np.sqrt((div**2).mean())
+            if verbose: print(niter, divdiffmean, divdiffmean/divmean )
+            if divdiffmean/divmean < eps:    
+                converged = True
+                break
+        if not converged:
+            raise RuntimeError('balanced divergence solution did not converge')
+        else:
+            # remove area mean div 
+            div[0]=div[0]-div[0].mean()
+            div[1]=div[1]-div[1].mean()
+            return div
+
+    def nlbalinc(self,vrtspecb,divspecb,dzb,vrtspec,div=None,linbal=False,baldiv=False,\
+                 nitermax=1000, relax=0.02, eps=1.e-3, verbose=False):
         """computes linearized incremental balanced layer thickness given vorticity (from nonlinear bal eqn)"""
         dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         psispec = self.ft.invlap*vrtspec
@@ -176,7 +265,12 @@ class TwoLayer(object):
         dz = self.ft.spectogrd(dzspec)
         dz[0,...] = dz[0,...] - dz[0,...].mean()
         dz[1,...] = dz[1,...] - dz[1,...].mean()
-        return dz
+        if baldiv:
+            div = self._nlbalinc_div(vrtspecb,divspecb,dzb,vrtspec,dz,div=div,linbal=False,\
+                                     nitermax=nitermax, relax=relax, eps=eps, verbose=verbose)
+            return dz,div
+        else:
+            return dz,np.zeros_like(dz)
 
     def nlbalance(self,vrtspec,div=False, dz1mean=None, dz2mean=None,\
                   nitermax=1000, relax=0.01, eps=1.e-2, verbose=False, linbal=False):
@@ -322,7 +416,7 @@ class TwoLayer(object):
         if masstend_diag:
             # mean abs total mass tend (meters/hour)
             self.masstendvar = 3600.*np.abs((self.ft.spectogrd(ddzdtspec)).sum(axis=0)).mean()
-            #print(self.masstendvar)
+            #print(self.t,self.masstendvar)
         ddzdtspec *= -1
         # diabatic mass flux contribution to continuity
         tmpspec = self.ft.grdtospec(massflux)
