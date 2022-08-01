@@ -50,6 +50,7 @@ linbal = False # use linear (geostrophic) balance instead of nonlinear (gradient
 dzmin = 10. # min layer thickness allowed
 inflate_before=True # inflate before balance operator applied
 baldiv = False # include balanced divergence
+update_unbal = True # update unbalanced part
 
 profile = False # turn on profiling?
 
@@ -492,8 +493,11 @@ for ntime in range(nassim):
         # update state vector using letkf weights
         xensmean_inc = np.zeros(xprime_b.shape[1:],xprime_b.dtype)
         xprime_a = xprime_b.copy()
-        #for k in range(4): # only update balanced u,v
-        for k in range(xprime_b.shape[1]):
+        if update_unbal:
+            kmax = xprime_b.shape[1] # update everything
+        else:
+            kmax = 4 # only update balanced u,v
+        for k in range(kmax): # only update balanced u,v
             for n in range(model.ft.Nt**2):
                 xensmean_inc[k, n] = (wtsmean[n]*xprime_b[:, k, n]).sum()
                 xprime_a[:, k, n] = np.dot(wts[n].T, xprime_b[:, k, n])
