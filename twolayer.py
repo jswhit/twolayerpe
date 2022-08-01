@@ -90,7 +90,7 @@ class TwoLayer(object):
         return ddzdt
 
     def _nlbal_div(self,vrtspec,dz,div,linbal=False,\
-                   nitermax=1000, relax=0.01, eps=1.e-2, verbose=False):
+                   nitermax=1000, relax=0.015, eps=1.e-4, verbose=False):
         # iteratively solve for balanced divergence.
         dzx,dzy = self.ft.getgrad(dz)
         psispec = self.ft.invlap*vrtspec
@@ -152,19 +152,10 @@ class TwoLayer(object):
             div[1]=div[1]-div[1].mean()
             return div
 
-    def _nlbalinc_tend(self,dvrtdt,psixxb,psiyyb,psixyb,linbal=False):
-        # solve tendency of nonlinear balance eqn to get layer thickness tendency
-        # given vorticity tendency (psixx,psiyy,psixy already computed)
-        dvrtspecdt = self.ft.grdtospec(dvrtdt)
+    def _nlbalinc_tend(self,dvrtspecdt):
+        # solve tendency of linear balance eqn to get layer thickness tendency
         dpsispecdt = self.ft.invlap*dvrtspecdt
-        if linbal:
-            mspec = self.f*dpsispecdt
-        else:
-            dpsixxdt = self.ft.spectogrd(-self.ft.k**2*dpsispecdt)
-            dpsiyydt = dvrtdt - dpsixxdt
-            dpsixydt = self.ft.spectogrd(-self.ft.k*self.ft.l*dpsispecdt)
-            tmpspec = self.f*dvrtspecdt + 2.*self.ft.grdtospec(psixxb*dpsiyydt + dpsixxdt*psiyyb - 2.*psixyb*dpsixydt)
-            mspec = self.ft.invlap*tmpspec
+        mspec = self.f*dpsispecdt
         dzspec = np.zeros(mspec.shape, mspec.dtype)
         dzspec[0,...] = mspec[0,...]/self.theta1
         dzspec[1,...] = (mspec[1,:]-mspec[0,...])/(self.theta2-self.theta1)
@@ -173,22 +164,17 @@ class TwoLayer(object):
         ddzdt = self.ft.spectogrd(dzspec)
         return ddzdt
 
-    def _nlbalinc_div(self,vrtspecb,divspecb,dzb,vrtspec,dz,div=None,linbal=False,\
-                   nitermax=1000, relax=0.01, eps=1.e-2, verbose=False):
+    def _nlbalinc_div(self,vrtspecb,divspecb,dzb,vrtspec,dz,div=None,\
+                   nitermax=1000, relax=0.015, eps=1.e-4, verbose=False):
         # iteratively solve for balanced divergence.
         dzx,dzy = self.ft.getgrad(dz)
         psispec = self.ft.invlap*vrtspec
-        psixx = self.ft.spectogrd(-self.ft.k**2*psispec)
-        psiyy = self.ft.spectogrd(-self.ft.l**2*psispec)
-        psixy = self.ft.spectogrd(-self.ft.k*self.ft.l*psispec)
         urot = self.ft.spectogrd(-self.ft.il*psispec); vrot = self.ft.spectogrd(self.ft.ik*psispec)
         vrt = self.ft.spectogrd(vrtspec)
         psispecb = self.ft.invlap*vrtspecb
-        psixxb = self.ft.spectogrd(-self.ft.k**2*psispecb)
-        psiyyb = self.ft.spectogrd(-self.ft.l**2*psispecb)
-        psixyb = self.ft.spectogrd(self.ft.k*self.ft.l*psispecb)
 
 # compute ub,vb,dzbx,dzby,divb
+        divspec_zero=np.zeros_like(divspecb)
         ub, vb = self.ft.getuv(vrtspecb,divspecb)
         dzbx,dzby = self.ft.getgrad(dzb)
         divb = self.ft.spectogrd(divspecb)
@@ -200,6 +186,8 @@ class TwoLayer(object):
         # following appendix of https://doi.org/10.1175/1520-0469(1993)050<1519:ACOPAB>2.0.CO;2
         # start iteration with div=0
         converged=False
+
+        # use full (unapproximated) vort and thickness equations
         for niter in range(nitermax):
             divspec = self.ft.grdtospec(div)
             chispec = self.ft.invlap*divspec
@@ -217,9 +205,8 @@ class TwoLayer(object):
             ddivdtspec, dvrtdtspec = self.ft.getvrtdivspec(tmp1,tmp2)
             dvrtdtspec *= -1
             dvrtdtspec += self.hyperdiff*vrtspec
-            dvrtdt = self.ft.spectogrd(dvrtdtspec)
-            # infer layer thickness tendency from d/dt of balance eqn.
-            ddzdt = self._nlbalinc_tend(dvrtdt,psixxb,psiyyb,psixyb,linbal=linbal)
+            # infer layer thickness tendency from d/dt of linear balance eqn.
+            ddzdt = self._nlbalinc_tend(dvrtdtspec)
             # new estimate of divergence from continuity eqn
             tmp1[0] = massflux; tmp1[1] = -massflux
             divnew = -(1./dzb)*(ddzdt + ub*dzx + u*dzbx + vb*dzy + v*dzby + dz*divb + dzb*div- tmp1)
@@ -232,6 +219,7 @@ class TwoLayer(object):
             if divdiffmean/divmean < eps:    
                 converged = True
                 break
+
         if not converged:
             raise RuntimeError('balanced divergence solution did not converge')
         else:
@@ -266,14 +254,14 @@ class TwoLayer(object):
         dz[0,...] = dz[0,...] - dz[0,...].mean()
         dz[1,...] = dz[1,...] - dz[1,...].mean()
         if baldiv:
-            div = self._nlbalinc_div(vrtspecb,divspecb,dzb,vrtspec,dz,div=div,linbal=False,\
+            div = self._nlbalinc_div(vrtspecb,divspecb,dzb,vrtspec,dz,div=div,\
                                      nitermax=nitermax, relax=relax, eps=eps, verbose=verbose)
             return dz,div
         else:
             return dz,np.zeros_like(dz)
 
     def nlbalance(self,vrtspec,div=False, dz1mean=None, dz2mean=None,\
-                  nitermax=1000, relax=0.01, eps=1.e-2, verbose=False, linbal=False):
+                  nitermax=1000, relax=0.015, eps=1.e-4, verbose=False, linbal=False):
         """computes balanced layer thickness given vorticity (from nonlinear bal eqn)"""
         if dz1mean is None: 
             dz1mean = self.zmid
