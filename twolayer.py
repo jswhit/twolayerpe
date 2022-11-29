@@ -11,7 +11,7 @@ class TwoLayer(object):
 
     def __init__(self,ft,dt,theta1=300,theta2=320,f=1.e-4,\
                  zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,\
-                 div2_diff_efold=1.e30,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
+                 div2_diff_efold=1.e30,tdrag=5*86400,tdiab=20*86400,umax=9,jetexp=0,symmetric=False):
         dtype = ft.precision
         # setup model parameters
         self.dtype = dtype
@@ -28,6 +28,7 @@ class TwoLayer(object):
         self.tdiab = np.array(tdiab,dtype) # lower layer drag timescale (secs)
         self.tdrag = np.array(tdrag,dtype) # interface relaxation timescale (secs)
         self.f = np.array(f,dtype) # coriolis parameter
+        self.symmetric = symmetric # if True, equal and opposite jets in each layer
         # hyperdiffusion parameters
         self.diff_order = np.array(diff_order, dtype)  # hyperdiffusion order
         self.diff_efold = np.array(diff_efold, dtype)  # hyperdiff time scale (secs)
@@ -57,11 +58,19 @@ class TwoLayer(object):
         v = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=self.dtype)
         l = np.array(2*np.pi,self.dtype) / self.ft.L
         u[1] = umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
+        #import matplotlib.pyplot as plt
+        #plt.plot(u[1])
+        if self.symmetric:
+            u[0] = -umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
         uspec = self.ft.grdtospec(u)
         vrtspec, divspec = self.ft.getvrtdivspec(u,v)
         u,v = self.ft.getuv(vrtspec,divspec)
         self.uref = u
         self.dzref, div = self.nlbalance(vrtspec)
+        #plt.figure()
+        #plt.plot(self.dzref[0])
+        #plt.show()
+        #raise SystemExit
         if self.dzref.min() < 0:
             raise ValueError('negative layer thickness! adjust equilibrium jet parameter')
 
@@ -119,6 +128,9 @@ class TwoLayer(object):
             # add lower layer drag contribution
             tmp1[0] += v[0]/self.tdrag
             tmp2[0] += -u[0]/self.tdrag
+            if self.symmetric:
+                tmp1[1] += v[1]/self.tdrag
+                tmp2[1] += -u[1]/self.tdrag
             # add diabatic momentum flux contribution
             # (this version averages vertical flux at top
             # and bottom of each layer)
@@ -201,6 +213,9 @@ class TwoLayer(object):
             # add lower layer drag contribution
             tmp1[0] += v[0]/self.tdrag
             tmp2[0] += -u[0]/self.tdrag
+            if self.symmetric:
+                tmp1[1] += v[1]/self.tdrag
+                tmp2[1] += -u[1]/self.tdrag
             # compute vort flux contributions to vorticity and divergence tend.
             ddivdtspec, dvrtdtspec = self.ft.getvrtdivspec(tmp1,tmp2)
             dvrtdtspec *= -1
@@ -389,6 +404,9 @@ class TwoLayer(object):
         # add lower layer drag contribution
         tmpg1[0] += v[0]/self.tdrag
         tmpg2[0] += -u[0]/self.tdrag
+        if self.symmetric:
+            tmpg1[1] += v[1]/self.tdrag
+            tmpg2[1] += -u[1]/self.tdrag
         # add diabatic momentum flux contribution
         # (this version averages vertical flux at top
         # and bottom of each layer)
@@ -557,6 +575,8 @@ if __name__ == "__main__":
 
     # create model instance, override default parameters.
     model=TwoLayer(ft,dt)
+    # symmetric jet
+    #model=TwoLayer(ft,dt,umax=4.5,tdrag=10*86400,jetexp=0,symmetric=True)
 
     # vort, div initial conditions
     dtype = model.dtype
