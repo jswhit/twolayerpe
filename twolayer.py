@@ -11,7 +11,7 @@ class TwoLayer(object):
 
     def __init__(self,ft,dt,theta1=300,theta2=320,f=1.e-4,\
                  zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,\
-                 div2_diff_efold=1.e30,tdrag=5*86400,tdiab=20*86400,umax=9,jetexp=0,symmetric=False):
+                 div2_diff_efold=1.e30,tdrag=5*86400,tdiab=20*86400,umax=8,jetexp=0,symmetric=False):
         dtype = ft.precision
         # setup model parameters
         self.dtype = dtype
@@ -504,7 +504,7 @@ class TwoLayer(object):
 
 # simple driver functions suitable for mulitprocessing (easy to serialize)
 def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
+              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=5*86400,tdiab=20*86400,umax=8,jetexp=0):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
@@ -517,7 +517,7 @@ def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_ef
     return u,v,dz,model.masstendvar
 
 def run_model4d(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-                zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
+                zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=5*86400,tdiab=20*86400,umax=8,jetexp=0):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
@@ -534,7 +534,7 @@ def run_model4d(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_
     return uout,vout,dzout,model.masstendvar
 
 def run_model_iau(u,v,dz,uinc,vinc,dzinc,wts,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
+              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=5*86400,tdiab=20*86400,umax=8,jetexp=0):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
@@ -576,7 +576,7 @@ if __name__ == "__main__":
     # create model instance, override default parameters.
     model=TwoLayer(ft,dt)
     # symmetric jet
-    #model=TwoLayer(ft,dt,umax=4.5,tdrag=10*86400,jetexp=0,symmetric=True)
+    #model=TwoLayer(ft,dt,umax=4,tdrag=10*86400,symmetric=True)
 
     # vort, div initial conditions
     dtype = model.dtype
