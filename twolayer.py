@@ -22,7 +22,7 @@ class TwoLayer(object):
         self.zmid = np.array(zmid,dtype) # resting depth of lower layer (m)
         self.ztop = np.array(ztop,dtype) # resting depth of both layers (m)
         self.umax = np.array(umax,dtype) # equilibrium jet strength
-        self.jetexp = jetexp # jet width parameter (should be even, higher=narrower)
+        self.jetexp = jetexp # jet width parameter (should be even, higher=narrower, 0 is sin(y) double jet)
         self.ft = ft # Fouriert instance (defines domain size, grid resolution)
         self.dt = np.array(dt,dtype) # time step (secs)
         self.tdiab = np.array(tdiab,dtype) # lower layer drag timescale (secs)
