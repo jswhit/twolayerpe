@@ -1,8 +1,8 @@
 from netCDF4 import Dataset
 import numpy as np
 nskip = 2
-filein = 'twolayerpe_N128_6hrly.nc'
-fileout = 'twolayerpe_N128_6hrly_nskip2.nc'
+filein = 'twolayerpe_N128_6hrly_asymjet.nc'
+fileout = 'twolayerpe_N128_6hrly_asymjet_nskip2.nc'
 ncin = Dataset(filein)
 nc = Dataset(fileout,'w')
 
@@ -23,6 +23,7 @@ nc.tdrag = ncin.tdrag
 nc.dt = ncin.dt
 nc.diff_efold = ncin.diff_efold
 nc.diff_order = ncin.diff_order
+nc.symmetric = ncin.symmetric
 x = nc.createDimension('x',nc.Nt)
 y = nc.createDimension('y',nc.Nt)
 z = nc.createDimension('z',2)
