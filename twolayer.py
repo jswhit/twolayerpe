@@ -11,7 +11,7 @@ class TwoLayer(object):
 
     def __init__(self,ft,dt,theta1=300,theta2=320,f=1.e-4,\
                  zmid=5.e3,ztop=10.e3,diff_efold=6*3600.,diff_order=8,\
-                 div2_diff_efold=1.e30,tdrag=5*86400,tdiab=20*86400,umax=8,jetexp=0,symmetric=False):
+                 div2_diff_efold=1.e30,tdrag=15*86400,tdiab=15*86400,umax=8,jetexp=0,symmetric=True):
         dtype = ft.precision
         # setup model parameters
         self.dtype = dtype
@@ -57,20 +57,16 @@ class TwoLayer(object):
         u = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=self.dtype)
         v = np.zeros((2,self.ft.Nt,self.ft.Nt),dtype=self.dtype)
         l = np.array(2*np.pi,self.dtype) / self.ft.L
-        u[1] = umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
-        #import matplotlib.pyplot as plt
-        #plt.plot(u[1])
         if self.symmetric:
-            u[0] = -umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
+            u[0] = -0.5*umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
+            u[1] = 0.5*umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
+        else:
+            u[1] = umax*np.sin(l*self.y)*np.sin(l*self.y)**self.jetexp
         uspec = self.ft.grdtospec(u)
         vrtspec, divspec = self.ft.getvrtdivspec(u,v)
         u,v = self.ft.getuv(vrtspec,divspec)
         self.uref = u
         self.dzref, div = self.nlbalance(vrtspec)
-        #plt.figure()
-        #plt.plot(self.dzref[0])
-        #plt.show()
-        #raise SystemExit
         if self.dzref.min() < 0:
             raise ValueError('negative layer thickness! adjust equilibrium jet parameter')
 
@@ -244,7 +240,7 @@ class TwoLayer(object):
             return div
 
     def nlbalinc(self,vrtspecb,divspecb,dzb,vrtspec,div=None,linbal=False,baldiv=False,\
-                 nitermax=1000, relax=0.02, eps=1.e-3, verbose=False):
+                 nitermax=1000, relax=0.015, eps=1.e-3, verbose=False):
         """computes linearized incremental balanced layer thickness given vorticity (from nonlinear bal eqn)"""
         dzspec = np.zeros(vrtspec.shape, vrtspec.dtype)
         psispec = self.ft.invlap*vrtspec
@@ -504,10 +500,10 @@ class TwoLayer(object):
 
 # simple driver functions suitable for mulitprocessing (easy to serialize)
 def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=5*86400,tdiab=20*86400,umax=8,jetexp=0):
+              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=15*86400,tdiag=15*86400,umax=8,jetexp=0,symmetric=True):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
-    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,symmetric=symmetric)
     vrtspec, divspec = ft.getvrtdivspec(u,v)
     dzspec = ft.grdtospec(dz)
     for n in range(timesteps):
@@ -517,10 +513,10 @@ def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_ef
     return u,v,dz,model.masstendvar
 
 def run_model4d(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-                zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=5*86400,tdiab=20*86400,umax=8,jetexp=0):
+                zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=15*86400,tdiag=15*86400,umax=8,jetexp=0,symmetric=True):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
-    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,symmetric=symmetric)
     vrtspec, divspec = ft.getvrtdivspec(u,v)
     dzspec = ft.grdtospec(dz)
     uout = np.empty((timesteps,)+u.shape,u.dtype)
@@ -534,10 +530,10 @@ def run_model4d(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_
     return uout,vout,dzout,model.masstendvar
 
 def run_model_iau(u,v,dz,uinc,vinc,dzinc,wts,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=5*86400,tdiab=20*86400,umax=8,jetexp=0):
+              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=15*86400,tdiag=15*86400,umax=8,jetexp=0,symmetric=True):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
-    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp)
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,symmetric=symmetric)
     vrtspec, divspec = ft.getvrtdivspec(u,v)
     dzspec = ft.grdtospec(dz)
     if len(uinc.shape) == 3: # 3diau
@@ -573,10 +569,8 @@ if __name__ == "__main__":
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
     ft = Fouriert(N,L,threads=threads)
 
-    # create model instance, override default parameters.
+    # create model instance with default parameter settings
     model=TwoLayer(ft,dt)
-    # symmetric jet
-    #model=TwoLayer(ft,dt,umax=4,tdrag=10*86400,symmetric=True)
 
     # vort, div initial conditions
     dtype = model.dtype
