@@ -561,16 +561,19 @@ if __name__ == "__main__":
     import os
 
     # grid, time step info
-    N = 64  
+    N = 128 
     L = 20000.e3
-    dt = 600 # time step in seconds
+    dt = 300 # time step in seconds
 
     # get OMP_NUM_THREADS (threads to use) from environment.
     threads = int(os.getenv('OMP_NUM_THREADS','1'))
     ft = Fouriert(N,L,threads=threads)
 
-    # create model instance with default parameter settings
-    model=TwoLayer(ft,dt)
+    # create model instance.
+    # symmetric jet (linear drag in both layers, eddy stats same in both layers)
+    model=TwoLayer(ft,dt,theta1=300,theta2=320,umax=8,tdrag=10*86400,tdiab=15*86400,symmetric=True)
+    # asymmetric jet (linear drag only in lower layer)
+    #model=TwoLayer(ft,dt,theta1=300,theta2=320,umax=8,tdrag=5*86400,tdiab=15*86400,symmetric=False)
 
     # vort, div initial conditions
     dtype = model.dtype
