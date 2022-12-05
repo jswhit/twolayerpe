@@ -3,10 +3,13 @@ from twolayer import TwoLayer
 import numpy as np
 import os, time
 
-# grid, time step info
-N = 128 
 L = 20000.e3
-dt = 300 # time step in seconds
+
+# grid, time step info
+N = 64 
+dt = 600 # time step in seconds
+#N = 128
+#dt = 300 # time step in seconds
 
 # get OMP_NUM_THREADS (threads to use) from environment.
 threads = int(os.getenv('OMP_NUM_THREADS','1'))
@@ -15,13 +18,16 @@ precision = 'float32'
 ft = Fouriert(N,L,threads=threads,precision=precision)
 
 # create model instance.
-model=TwoLayer(ft,dt,theta2=320,umax=12.5,jetexp=2)
+# asymmetric jet (drag on lower layer only)
+#model=TwoLayer(ft,dt,tdrag=5*86400,tdiab=15*86400,symmetric=False)
+# symmetric jet (default, eddy stats same in both layers)
+model=TwoLayer(ft,dt,tdrag=10*86400,tdiab=15*86400,symmetric=True)
 
 dtype = model.dtype
 hrout = 6
 outputinterval = hrout*3600. # output interval 
 tmin = 100.*86400. # time to start saving data (in days)
-tmax = 300.*86400. # time to stop (in days)
+tmax = 500.*86400. # time to stop (in days)
 nsteps = int(tmax/outputinterval) # number of time steps to animate
 # set number of timesteps to integrate for each call to model.advance
 model.timesteps = int(outputinterval/model.dt)
@@ -46,7 +52,7 @@ vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
 if dzg.min() < 0:
     raise ValueError('negative layer thickness! adjust jet parameters')
 
-savedata = 'twolayerpe_N%s_%shrly.nc' % (N,hrout) # save data plotted in a netcdf file.
+savedata = 'twolayerpe_N%s_%shrly_symjet.nc' % (N,hrout) # save data plotted in a netcdf file.
 #savedata = None # don't save data
 
 if savedata is not None:
@@ -69,6 +75,7 @@ if savedata is not None:
     nc.dt = model.dt
     nc.diff_efold = model.diff_efold
     nc.diff_order = model.diff_order
+    nc.symmetric = int(model.symmetric)
     x = nc.createDimension('x',model.ft.Nt)
     y = nc.createDimension('y',model.ft.Nt)
     z = nc.createDimension('z',2)
