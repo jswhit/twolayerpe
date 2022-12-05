@@ -165,13 +165,16 @@ class TwoLayer(object):
 
 # simple driver function suitable for mulitprocessing (easy to serialize)
 def run_model(u,v,dz,N,L,dt,timesteps,theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag1=10*86400,tdrag2=10.*86400,tdiag=15*86400,umax=8):
+              zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag1=10*86400,tdrag2=10.*86400,tdiab=15*86400,umax=8):
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag1,tdrag2=tdrag2,tdiab=tdiab,umax=umax)
-    model.timesteps = timesteps
-    u,v,dz = model.advance(self,vrt,div,dz,grid=True)
     vrtspec, divspec = ft.getvrtdivspec(u,v)
+    dzspec = ft.grdtospec(dz)
+    for n in range(timesteps):
+        vrtspec, divspec, dzspec = model.rk4step(vrtspec,divspec,dzspec)
+    u, v = ft.getuv(vrtspec,divspec)
+    dz = ft.spectogrd(dzspec)
     return u,v,dz,model.masstendvar
 
 if __name__ == "__main__":
