@@ -57,7 +57,7 @@ diff_efold = None # use diffusion from climo file
 profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
-fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
+fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
@@ -68,12 +68,6 @@ nassim = 1600 # assimilation times to run
 dzmin = 10. # min layer thickness allowed
 
 nanals = 20 # ensemble members
-
-oberrstdev_zmid = 100.  # interface height ob error in meters
-#oberrstdev_zsfc = 10. # surface height ob error in meters
-#oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
-oberrstdev_zsfc = 1.e30 # don't assimilate surface height
-oberrstdev_wind = 1.e30 # don't assimilate winds
 
 # nature run created using twolayer_naturerun.py.
 filename_climo = 'twolayerpe_N64_6hrly_symjet.nc' # file name for forecast model climo
@@ -109,6 +103,12 @@ L = nc_climo.L
 dt = nc_climo.dt
 diff_efold=nc_climo.diff_efold
 diff_order=nc_climo.diff_order
+
+oberrstdev_zmid = 100. # interface height ob error in meters
+oberrstdev_zsfc = ((theta2-theta1)/theta1)*100.  # surface height ob error in meters
+#oberrstdev_wind = 1.   # wind ob error in meters per second
+#oberrstdev_zsfc = 1.e30 # surface height ob error in meters
+oberrstdev_wind = 1.e30 # don't assimilate winds
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
@@ -199,6 +199,7 @@ else:
 assim_interval = obtimes[1]-obtimes[0]
 assim_timesteps = int(np.round(assim_interval/model.dt))
 print('# div2_diff_efold = %s' % div2_diff_efold)
+print('# oberrzsfc=%s oberrzmid=%s oberrwind=%s' % (oberrstdev_zsfc,oberrstdev_zmid,oberrstdev_wind))
 print('# assim_interval = %s assim_timesteps = %s' % (assim_interval,assim_timesteps))
 
 # initialize model clock
@@ -442,11 +443,12 @@ for ntime in range(nassim):
     if not use_letkf:
         obcovlocal = np.block(
             [
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1]
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1]
             ]
         )
 
