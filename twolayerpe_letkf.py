@@ -374,7 +374,7 @@ def balens(model,uens,vens,dzens,linbal=False,baldiv=False,nitermax=1000,divgues
 
 def balmem(N,L,dt,umem,vmem,dzmem,linbal=False,baldiv=False,divguess=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
            theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-           zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=4*86400,tdiab=20*86400,umax=12.5,jetexp=2):
+           zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=10*86400,tdiab=20*86400,umax=4,jetexp=0,symmetric=True):
     if not baldiv:
         # balanced div assumed zero
         divguess=None

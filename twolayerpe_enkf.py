@@ -56,7 +56,7 @@ diff_efold = None # use diffusion from climo file
 
 profile = False # turn on profiling?
 
-use_letkf = True # if False, use serial EnSRF
+use_letkf = False # if False, use serial EnSRF
 fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 read_restart = False
@@ -112,8 +112,8 @@ oberrstdev_wind = 1.e30 # don't assimilate winds
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
-div2_diff_efold=1800.
-#div2_diff_efold=1.e30
+#div2_diff_efold=1800.
+div2_diff_efold=1.e30
 model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,\
 umax=umax,theta1=theta1,theta2=theta2,diff_efold=diff_efold,\
 div2_diff_efold=div2_diff_efold)
