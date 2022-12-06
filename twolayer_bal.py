@@ -4,6 +4,31 @@ from twolayer import TwoLayer as TwoLayer_base
 
 class TwoLayer(TwoLayer_base):
 
+    def rk4step_iau(self,vrtspec,divspec,dzspec,fvrtspec,fdivspec,fdzspec):
+        # update state using 4th order runge-kutta, adding extra forcing
+        # that is constant over the time interval.
+        dt = self.dt
+        k1vrt,k1div,k1thk = \
+        self.gettend(vrtspec,divspec,dzspec,masstend_diag=True)
+        k1vrt += fvrtspec; k1div += fdivspec; k1thk += fdzspec
+        #masstendspec = k1thk.sum(axis=0)
+        # parameter measuring vertically integrated mass tend amplitude (external mode imbalance)
+        #self.masstendvar = ((masstendspec*np.conjugate(masstendspec)).real).sum() 
+        k2vrt,k2div,k2thk = \
+        self.gettend(vrtspec+0.5*dt*k1vrt,divspec+0.5*dt*k1div,dzspec+0.5*dt*k1thk)
+        k2vrt += fvrtspec; k2div += fdivspec; k2thk += fdzspec
+        k3vrt,k3div,k3thk = \
+        self.gettend(vrtspec+0.5*dt*k2vrt,divspec+0.5*dt*k2div,dzspec+0.5*dt*k2thk)
+        k3vrt += fvrtspec; k3div += fdivspec; k3thk += fdzspec
+        k4vrt,k4div,k4thk = \
+        self.gettend(vrtspec+dt*k3vrt,divspec+dt*k3div,dzspec+dt*k3thk)
+        k4vrt += fvrtspec; k4div += fdivspec; k4thk += fdzspec
+        vrtspec += dt*(k1vrt+2.*k2vrt+2.*k3vrt+k4vrt)/6.
+        divspec += dt*(k1div+2.*k2div+2.*k3div+k4div)/6.
+        dzspec += dt*(k1thk+2.*k2thk+2.*k3thk+k4thk)/6.
+        self.t += dt
+        return vrtspec,divspec,dzspec
+
     def _nlbalance_tend(self,dvrtdt,psixx,psiyy,psixy,linbal=False):
         # solve tendency of nonlinear balance eqn to get layer thickness tendency
         # given vorticity tendency (psixx,psiyy,psixy already computed)
