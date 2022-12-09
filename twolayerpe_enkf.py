@@ -52,11 +52,9 @@ exptname = os.getenv('exptname','test')
 n_jobs = int(os.getenv('N_JOBS','0'))
 threads = 1
 
-diff_efold = None # use diffusion from climo file
-
 profile = False # turn on profiling?
 
-use_letkf = False # if False, use serial EnSRF
+use_letkf = True # if False, use serial EnSRF
 fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 read_restart = False

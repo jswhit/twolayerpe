@@ -50,7 +50,7 @@ else:
 #div2_diff_efold=1800. # extra laplacian div diff (suppress gravity modes)
 div2_diff_efold=1.e30
 use_iau = True
-balvar = True
+balvar = False
 fix_totmass = False # fix area mean dz in each layer.
 iau_filter_weights = False # use Lanczos weights instead of constant
 threediau = False
