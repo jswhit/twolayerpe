@@ -19,9 +19,9 @@ ft = Fouriert(N,L,threads=threads,precision=precision)
 
 # create model instance.
 # asymmetric jet (drag on lower layer only)
-#model=TwoLayer(ft,dt,tdrag=5*86400,tdiab=15*86400,symmetric=False)
+#model=TwoLayer(ft,dt,umax=8,tdrag1=5*86400,tdrag2=1.e30,tdiab=15*86400)
 # symmetric jet (default, eddy stats same in both layers)
-model=TwoLayer(ft,dt,tdrag=10*86400,tdiab=15*86400,symmetric=True)
+model=TwoLayer(ft,dt,umax=8,tdrag1=10*86400,tdrag2=10*86400,tdiab=15*86400)
 
 dtype = model.dtype
 hrout = 6
@@ -33,8 +33,16 @@ nsteps = int(tmax/outputinterval) # number of time steps to animate
 model.timesteps = int(outputinterval/model.dt)
 
 # vort, div initial conditions
-vref = np.zeros(model.uref.shape, model.uref.dtype)
-vrtspec, divspec = model.ft.getvrtdivspec(model.uref, vref)
+dtype = model.dtype
+l = np.array(2*np.pi,dtype) / model.ft.L
+uref = np.zeros((2,model.ft.Nt,model.ft.Nt),dtype=dtype)
+vref = np.zeros((2,model.ft.Nt,model.ft.Nt),dtype=dtype)
+if model.tdrag[1] < 1.e10:
+    uref[0] = -0.5*model.umax*np.sin(l*model.y)
+    uref[1] = 0.5*model.umax*np.sin(l*model.y)
+else:
+    uref[1] = model.umax*np.sin(l*self.y)
+vrtspec, divspec = model.ft.getvrtdivspec(uref, vref)
 vrtg = model.ft.spectogrd(vrtspec)
 vrtg += np.random.normal(0,2.e-6,size=(2,ft.Nt,ft.Nt)).astype(dtype)
 # add isolated blob to upper layer
@@ -45,7 +53,7 @@ x = x.astype(dtype); y = y.astype(dtype)
 vrtg[1] = vrtg[1]+2.e-6*(np.sin(x/2)**(2*nexp)*np.sin(y)**nexp)
 vrtspec = model.ft.grdtospec(vrtg)
 divspec = np.zeros(vrtspec.shape, vrtspec.dtype)
-dzg,divg = model.nlbalance(vrtspec)
+dzg = model.nlbalance(vrtspec)
 dzspec = model.ft.grdtospec(dzg)
 ug,vg = model.ft.getuv(vrtspec,divspec)
 vrtspec, divspec = model.ft.getvrtdivspec(ug,vg)
@@ -63,7 +71,6 @@ if savedata is not None:
     nc.delth = model.delth
     nc.grav = model.grav
     nc.umax = model.umax
-    nc.jetexp = model.jetexp
     nc.ztop = model.ztop
     nc.zmid = model.zmid
     nc.f = model.f
@@ -75,7 +82,6 @@ if savedata is not None:
     nc.dt = model.dt
     nc.diff_efold = model.diff_efold
     nc.diff_order = model.diff_order
-    nc.symmetric = int(model.symmetric)
     x = nc.createDimension('x',model.ft.Nt)
     y = nc.createDimension('y',model.ft.Nt)
     z = nc.createDimension('z',2)

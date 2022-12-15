@@ -3,7 +3,7 @@ from netCDF4 import Dataset
 import sys, time, os
 from twolayer import TwoLayer, run_model
 from pyfft import Fouriert
-from enkf_utils import cartdist,letkf_update,serial_update,gaspcohn
+from enkf_utils import cartdist,letkf_update,serial_update,gaspcohn,letkfwts_compute2
 from joblib import Parallel, delayed
 
 # EnKF cycling for two-layer pe turbulence model with interface height obs.
@@ -52,16 +52,13 @@ exptname = os.getenv('exptname','test')
 n_jobs = int(os.getenv('N_JOBS','0'))
 threads = 1
 
-diff_efold = None # use diffusion from climo file
-
 profile = False # turn on profiling?
 
 use_letkf = True # if False, use serial EnSRF
-fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
+fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
 ivar = 0 # 0 for u,v update, 1 for vrt,div, 2 for psi,chi
 read_restart = False
 debug_model = False # run perfect model ensemble, check to see that error=zero with no DA
-posterior_stats = False
 precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
@@ -70,17 +67,11 @@ dzmin = 10. # min layer thickness allowed
 
 nanals = 20 # ensemble members
 
-oberrstdev_zmid = 100.  # interface height ob error in meters
-#oberrstdev_zsfc = 10. # surface height ob error in meters
-#oberrstdev_wind = np.sqrt(2.) # wind ob error in meters per second
-oberrstdev_zsfc = 1.e30 # don't assimilate surface height
-oberrstdev_wind = 1.e30 # don't assimilate winds
-
 # nature run created using twolayer_naturerun.py.
-filename_climo = 'twolayerpe_N64_6hrly.nc' # file name for forecast model climo
+filename_climo = 'twolayerpe_N64_6hrly_symjet.nc' # file name for forecast model climo
 # perfect model
-#filename_truth = filename_climo
-filename_truth = 'twolayerpe_N128_6hrly_nskip2.nc' # file name for forecast model climo
+filename_truth = filename_climo
+#filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
 
 print('# filename_modelclimo=%s' % filename_climo)
 print('# filename_truth=%s' % filename_truth)
@@ -96,7 +87,6 @@ nc_climo = Dataset(filename_climo)
 x = nc_climo.variables['x'][:]
 y = nc_climo.variables['y'][:]
 x, y = np.meshgrid(x, y)
-jetexp = nc_climo.jetexp
 umax = nc_climo.umax
 theta1 = nc_climo.theta1
 theta2 = nc_climo.theta2
@@ -112,19 +102,25 @@ dt = nc_climo.dt
 diff_efold=nc_climo.diff_efold
 diff_order=nc_climo.diff_order
 
+oberrstdev_zmid = 100. # interface height ob error in meters
+oberrstdev_zsfc = ((theta2-theta1)/theta1)*100.  # surface height ob error in meters
+#oberrstdev_wind = 1.   # wind ob error in meters per second
+#oberrstdev_zsfc = 1.e30 # surface height ob error in meters
+oberrstdev_wind = 1.e30 # don't assimilate winds
+
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
 #div2_diff_efold=1800.
 div2_diff_efold=1.e30
-model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,\
-umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold,\
+model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,\
+umax=umax,theta1=theta1,theta2=theta2,diff_efold=diff_efold,\
 div2_diff_efold=div2_diff_efold)
 if debug_model:
    print('N,Nt,L=',N,Nt,L)
    print('theta1,theta2=',theta1,theta2)
    print('zmid,ztop=',zmid,ztop)
    print('tdrag,tdiag=',tdrag/86400,tdiab/86400.)
-   print('umax,jetexp=',umax,jetexp)
+   print('umax=',umax)
    print('diff_order,diff_efold=',diff_order,diff_efold)
 
 dtype = model.dtype
@@ -201,8 +197,8 @@ else:
 assim_interval = obtimes[1]-obtimes[0]
 assim_timesteps = int(np.round(assim_interval/model.dt))
 print('# div2_diff_efold = %s' % div2_diff_efold)
+print('# oberrzsfc=%s oberrzmid=%s oberrwind=%s' % (oberrstdev_zsfc,oberrstdev_zmid,oberrstdev_wind))
 print('# assim_interval = %s assim_timesteps = %s' % (assim_interval,assim_timesteps))
-print('# ntime,zmiderr,zmidsprd,v2err,v2sprd,zsfcerr,zsfcsprd,v1err,v1sprd,KEerr,KEsprd,inflation,masstend_diag,totdz')
 
 # initialize model clock
 model.t = obtimes[ntstart]
@@ -218,7 +214,6 @@ if savedata is not None:
     nc.delth = theta2-theta1
     nc.grav = model.grav
     nc.umax = umax
-    nc.jetexp = jetexp
     nc.ztop = ztop
     nc.zmid = zmid
     nc.f = model.f
@@ -308,10 +303,14 @@ def getspreaderr(model,uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
 
     zsfcensmean = zsfc.mean(axis=0)
     zmidensmean = zmid.mean(axis=0)
+    m1ensmean = m1.mean(axis=0)
     m2ensmean = m2.mean(axis=0)
     zmiderr = (zmidensmean-zmid_truth)**2
     zmidprime = zmid-zmidensmean
     zmidsprd = (zmidprime**2).sum(axis=0)/(nanals-1)
+    m1err = (m1ensmean-m1_truth)**2
+    m1prime = m1-m1ensmean
+    m1sprd = (m1prime**2).sum(axis=0)/(nanals-1)
     m2err = (m2ensmean-m2_truth)**2
     m2prime = m2-m2ensmean
     m2sprd = (m2prime**2).sum(axis=0)/(nanals-1)
@@ -323,15 +322,21 @@ def getspreaderr(model,uens,vens,dzens,u_truth,v_truth,dz_truth,ztop):
     vecwind2_errav = vecwind_err[1,...].mean()
     vecwind1_sprdav = vecwind_sprd[0,...].mean()
     vecwind2_sprdav = vecwind_sprd[1,...].mean()
-    ke_errav = np.sqrt(ke_err.mean())
-    ke_sprdav = np.sqrt(ke_sprd.mean())
+    ke_errav = np.sqrt(0.5*(ke_err[0].mean()+ke_err[1].mean()))
+    ke_sprdav = np.sqrt(0.5*(ke_sprd[0].mean()+ke_sprd[1].mean()))
     zmid_errav = np.sqrt(zmiderr.mean())
     zmid_sprdav = np.sqrt(zmidsprd.mean())
+    m1_errav = np.sqrt(m1err.mean())
+    m1_sprdav = np.sqrt(m1sprd.mean())
     m2_errav = np.sqrt(m2err.mean())
     m2_sprdav = np.sqrt(m2sprd.mean())
+    m_errav = np.sqrt(0.5*(m1err.mean() + m2err.mean()))
+    m_sprdav = np.sqrt(0.5*(m1sprd.mean() + m2sprd.mean()))
     zsfc_errav = np.sqrt(zsfcerr.mean())
     zsfc_sprdav = np.sqrt(zsfcsprd.mean())
-    return vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m2_errav,m2_sprdav,ke_errav,ke_sprdav
+
+    #return zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m1_errav,m1_sprdav,m2_errav,m2_sprdav,vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav
+    return zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m_errav,m_sprdav,ke_errav,ke_sprdav
 
 # forward operator, ob space stats
 def gethofx(uens,vens,zsfcens,zmidens,indxob,nanals,nobs):
@@ -436,11 +441,12 @@ for ntime in range(nassim):
     if not use_letkf:
         obcovlocal = np.block(
             [
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
-                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1]
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1],
+                [obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1,obcovlocal1]
             ]
         )
 
@@ -472,19 +478,31 @@ for ntime in range(nassim):
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
 
     # prior stats.
-    vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,\
-    zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m2_errav,m2_sprdav,ke_errav,ke_sprdav=\
+    #zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m1_errav,m1_sprdav,m2_errav,m2_sprdav,vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav=\
+    zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m_errav,m_sprdav,ke_errav,ke_sprdav=\
     getspreaderr(model,uens,vens,dzens,\
     u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
     totmass = ((dzens[:,0,...]+dzens[:,1,...]).mean(axis=0)).mean()/1000.
-    print("%s %g %g %g %g %g %g %g %g %g %g %g %g  %g %g" %\
-    (ntime+ntstart,zmid_errav,zmid_sprdav,m2_errav,m2_sprdav,vecwind2_errav,vecwind2_sprdav,\
-     zsfc_errav,zsfc_sprdav,vecwind1_errav,vecwind1_sprdav,ke_errav,ke_sprdav,masstend_diag,totmass))
+    #print("%s %g %g %g %g %g %g %g %g %g %g %g %g %g %g" %\
+    #(ntime+ntstart,zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m1_errav,m1_sprdav,m2_errav,m2_sprdav,\
+    # vecwind1_errav,vecwind1_spdav,vecwind2_errav,vecwind2_sprdav,masstend_diag,totmass))
+    print("%s %g %g %g %g %g %g %g %g %g %g" %\
+    (ntime+ntstart,zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m_errav,m_sprdav,\
+     ke_errav,ke_sprdav,masstend_diag,totmass))
 
     # update state vector with serial filter or letkf.
     if not debug_model: 
         if use_letkf:
-            xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
+            #xens = letkf_update(xens,hxens,obs,oberrvar,covlocal_tmp,n_jobs)
+            wts,wtsmean = letkfwts_compute2(hxens,obs,oberrvar,covlocal_tmp,n_jobs)
+            # update state vector using letkf weights
+            xprime_a = xprime.copy()
+            xensmean_a = xensmean_b.copy()
+            for k in range(xens.shape[1]): # only update balanced u,v
+                for n in range(model.ft.Nt**2):
+                    xensmean_a[k, n] = xensmean_b[k,n] + (wtsmean[n]*xprime[:, k, n]).sum()
+                    xprime_a[:, k, n] = np.dot(wts[n].T, xprime[:, k, n])
+            xens = xprime_a + xensmean_a
         else:
             xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
         t2 = time.time()
@@ -517,17 +535,6 @@ for ntime in range(nassim):
             dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
             dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
 
-    # posterior stats
-    if posterior_stats:
-        vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav,\
-        zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m2_errav,m2_sprdav,ke_errav,ke_sprdav=\
-        getspreaderr(model,uens,vens,dzens,\
-        u_truth[ntime+ntstart],v_truth[ntime+ntstart],dz_truth[ntime+ntstart],ztop)
-        totmass = ((dzens_mid_a[:,0,...]+dzens_mid_a[:,1,...]).mean(axis=0)).mean()/1000.
-        print("%s %g %g %g %g %g %g %g %g %g %g %g %g %g %g" %\
-        (ntime+ntstart,zmid_errav,zmid_sprdav,m2_errav,m2_sprdav,vecwind2_errav,vecwind2_sprdav,\
-         zsfc_errav,zsfc_sprdav,vecwind1_errav,vecwind1_sprdav,ke_errav,ke_sprdav,masstend_diag,totmass))
-
     # save data.
     if savedata is not None:
         u_a[ntime,:,:,:] = uens
@@ -546,7 +553,7 @@ for ntime in range(nassim):
             masstend_diag+=model.masstendvar/nanals
     else:
         # use joblib to run ens members on different cores (N_JOBS env var sets number of tasks).
-        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         masstend_diag=0.
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]

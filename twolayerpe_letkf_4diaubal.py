@@ -1,7 +1,7 @@
 import numpy as np
 from netCDF4 import Dataset
 import sys, time, os
-from twolayer import TwoLayer, run_model, run_model_iau
+from twolayer_bal import TwoLayer, run_model, run_model_iau
 from pyfft import Fouriert
 from enkf_utils import cartdist,letkfwts_compute,gaspcohn
 from joblib import Parallel, delayed
@@ -62,9 +62,9 @@ posterior_stats = False
 # nature run created using twolayer_naturerun.py.
 filename_climo = 'twolayerpe_N64_6hrly_symjet.nc' # file name for forecast model climo
 # perfect model
-#filename_truth = filename_climo
+filename_truth = filename_climo
 # imperfect model (from higher res nature run)
-filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
+#filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
 diff_efold = None # use diffusion from climo file
 linbal = False
 dzmin = 10. # min layer thickness allowed
@@ -95,8 +95,6 @@ nc_climo = Dataset(filename_climo)
 x = nc_climo.variables['x'][:]
 y = nc_climo.variables['y'][:]
 x, y = np.meshgrid(x, y)
-jetexp = nc_climo.jetexp
-symmetric = bool(nc_climo.symmetric)
 umax = nc_climo.umax
 theta1 = nc_climo.theta1
 theta2 = nc_climo.theta2
@@ -120,14 +118,14 @@ oberrstdev_wind = 1.e30 # don't assimilate winds
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
-model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag=tdrag,tdiab=tdiab,div2_diff_efold=div2_diff_efold,\
-umax=umax,jetexp=jetexp,theta1=theta1,theta2=theta2,diff_efold=diff_efold,symmetric=symmetric)
+model = TwoLayer(ft,dt,zmid=zmid,ztop=ztop,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,div2_diff_efold=div2_diff_efold,\
+umax=umax,theta1=theta1,theta2=theta2,diff_efold=diff_efold)
 if debug_model:
    print('N,Nt,L=',N,Nt,L)
    print('theta1,theta2=',theta1,theta2)
    print('zmid,ztop=',zmid,ztop)
    print('tdrag,tdiag=',tdrag/86400,tdiab/86400.)
-   print('umax,jetexp,symmetric=',umax,jetexp,symmetric)
+   print('umax=',umax)
    print('diff_order,diff_efold=',diff_order,diff_efold)
 
 dtype = model.dtype
@@ -238,8 +236,6 @@ if savedata is not None:
     nc.delth = theta2-theta1
     nc.grav = model.grav
     nc.umax = umax
-    nc.jetexp = jetexp
-    nc.symmetric = int(symmetric)
     nc.ztop = ztop
     nc.zmid = zmid
     nc.f = model.f
@@ -377,13 +373,13 @@ def gethofx(uens,vens,zsfcens,zmidens,indxob,nanals,nobs):
 
 def balmem(N,L,dt,umem,vmem,dzmem,linbal=False,baldiv=False,divguess=True,nitermax=1000,relax=0.015,eps=1.e-4,verbose=False,\
            theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-           zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag=10*86400,tdiab=20*86400,umax=4,jetexp=0,symmetric=True):
+           zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag1=10*86400,tdrag2=10*86400,tdiab=15*86400,umax=8):
     if not baldiv:
         # balanced div assumed zero
         divguess=None
     ft = Fouriert(N,L,threads=1)
     model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
-    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,symmetric=symmetric)
+    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax)
     vrtspec, divspec = ft.getvrtdivspec(umem,vmem)
     if divguess==True:
         div = model.ft.spectogrd(divspec) # use calculated div as initial guess
@@ -414,7 +410,7 @@ def enstoctl(model,uens,vens,dzens,balvar=False,linbal=False,baldiv=False):
         xens[:,2:4,:] = vens[:].reshape(nanals,2,model.ft.Nt**2)
         xens[:,4:6,:] = dzens[:].reshape(nanals,2,model.ft.Nt**2)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],linbal=linbal,baldiv=baldiv,divguess=True,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag=model.tdrag,tdiab=model.tdiab,umax=model.umax,jetexp=model.jetexp,div2_diff_efold=model.div2_diff_efold,symmeric=model.symmetric) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens[nanal],vens[nanal],dzens[nanal],linbal=linbal,baldiv=baldiv,divguess=True,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag1=model.tdrag[0],tdrag2=model.tdrag[1],tdiab=model.tdiab,umax=model.umax,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
         uens_bal = np.empty(uens.shape, uens.dtype); vens_bal = np.empty(vens.shape, vens.dtype)
         dzens_bal = np.empty(dzens.shape, dzens.dtype)
         for nanal in range(nanals):
@@ -453,7 +449,7 @@ def ctltoens(model,xens,balvar=False,linbal=False,baldiv=False,fix_totmass=False
         uens[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
         vens[:] = xens[:,6:8,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
         dzens[:] = xens[:,8:10,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],linbal=linbal,baldiv=baldiv,divguess=True,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag=model.tdrag,tdiab=model.tdiab,umax=model.umax,jetexp=model.jetexp,div2_diff_efold=model.div2_diff_efold,symmetric=model.symmetric) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balmem)(N,L,dt,uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal],linbal=linbal,baldiv=baldiv,divguess=True,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag1=model.tdrag[0],tdrag2=model.tdrag[1],tdiab=model.tdiab,umax=model.umax,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
         for nanal in range(nanals):
             uens_bal[nanal],vens_bal[nanal],dzens_bal[nanal] = results[nanal]
         uens += uens_bal
@@ -642,7 +638,7 @@ for ntime in range(nassim):
             uens = uens_mid_a; vens = vens_mid_a; dzens = dzens_mid_a
             t1 = time.time()
             tstart = model.t
-            results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold,symmetric=symmetric) for nanal in range(nanals))
+            results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
             masstend_diag=0
             for nanal in range(nanals):
                 uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
@@ -657,7 +653,7 @@ for ntime in range(nassim):
             uens = uens_mid_a; vens = vens_mid_a; dzens = dzens_mid_a
             t1 = time.time()
             tstart = model.t
-            results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold,symmetric=symmetric) for nanal in range(nanals))
+            results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
             for nanal in range(nanals):
                 uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
             if fix_totmass:
@@ -665,7 +661,7 @@ for ntime in range(nassim):
                     dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
                     dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
             uens_beg=uens.copy(); vens_beg=vens.copy(); dzens_beg=dzens.copy()
-            results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold,symmetric=symmetric) for nanal in range(nanals))
+            results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
             masstend_diag=0.
             for nanal in range(nanals):
                 uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
@@ -676,7 +672,7 @@ for ntime in range(nassim):
                     dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
             model.t = tstart + dt*assim_timesteps
             uens_mid=uens.copy(); vens_mid=vens.copy(); dzens_mid=dzens.copy()
-            results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold,symmetric=symmetric) for nanal in range(nanals))
+            results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
             for nanal in range(nanals):
                 uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
             if fix_totmass:
@@ -711,7 +707,7 @@ for ntime in range(nassim):
                 uens_inc[assim_timesteps//2+n] = wt1*uens_inc_mid + wt2*uens_inc_end
                 vens_inc[assim_timesteps//2+n] = wt1*vens_inc_mid + wt2*vens_inc_end
                 dzens_inc[assim_timesteps//2+n] = wt1*dzens_inc_mid + wt2*dzens_inc_end
-        results = Parallel(n_jobs=n_jobs)(delayed(run_model_iau)(uens_beg[nanal],vens_beg[nanal],dzens_beg[nanal],uens_inc[:,nanal,...],vens_inc[:,nanal,...],dzens_inc[:,nanal,...],wts_iau,N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold,symmetric=symmetric) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model_iau)(uens_beg[nanal],vens_beg[nanal],dzens_beg[nanal],uens_inc[:,nanal,...],vens_inc[:,nanal,...],dzens_inc[:,nanal,...],wts_iau,N,L,dt,assim_timesteps,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
         if fix_totmass:
@@ -719,7 +715,7 @@ for ntime in range(nassim):
                 dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
                 dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
         uens_beg=uens.copy(); vens_beg=vens.copy(); dzens_beg=dzens.copy()
-        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold,symmetric=symmetric) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens[nanal],vens[nanal],dzens[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         masstend_diag=0.
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
@@ -729,7 +725,7 @@ for ntime in range(nassim):
             for nmem in range(nanals):
                 dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
                 dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
-        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens_mid[nanal],vens_mid[nanal],dzens_mid[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag=tdrag,tdiab=tdiab,umax=umax,jetexp=jetexp,div2_diff_efold=div2_diff_efold,symmetric=symmetric) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(run_model)(uens_mid[nanal],vens_mid[nanal],dzens_mid[nanal],N,L,dt,assim_timesteps//2,theta1=theta1,theta2=theta2,zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax,div2_diff_efold=div2_diff_efold) for nanal in range(nanals))
         for nanal in range(nanals):
             uens[nanal],vens[nanal],dzens[nanal],mtend = results[nanal]
         if fix_totmass:
