@@ -542,7 +542,7 @@ for ntime in range(nassim):
         v_a[ntime-ntime_savestart,:,:,:] = vens
         dz_a[ntime-ntime_savestart,:,:,:] = dzens
         tvar[ntime-ntime_savestart] = obtimes[ntime+ntstart]
-         nc.sync()
+        nc.sync()
 
     # run forecast ensemble to next analysis time
     t1 = time.time()

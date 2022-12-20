@@ -32,6 +32,7 @@ div2_diff_efold=1.e30
 fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
 posterior_stats = False
 nassim = 1600 # assimilation times to run
+ntime_savestart = 600 # if savedata is not None, start saving data at this time
 nanals = 20 # ensemble members
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
@@ -467,21 +468,22 @@ for ntime in range(nassim):
     # calculate LETKF weights
     wts,wtsmean = letkfwts_compute2(hxens,obs,oberrvar,covlocal_tmp,n_jobs)
 
-    if savedata is not None:
-        u_t[ntime] = u_truth[ntime+ntstart]
-        u_b[ntime,:,:,:] = uens
-        v_t[ntime] = v_truth[ntime+ntstart]
-        v_b[ntime,:,:,:] = vens
-        dz_t[ntime] = dz_truth[ntime+ntstart]
-        dz_b[ntime,:,:,:] = dzens
-        obsu1[ntime] = obs[0:nobs]
-        obsv1[ntime] = obs[nobs:2*nobs]
-        obsu2[ntime] = obs[2*nobs:3*nobs]
-        obsu2[ntime] = obs[3*nobs:4*nobs]
-        obszfc[ntime] = obs[4*nobs:5*nobs]
-        obszmid[ntime] = obs[5*nobs:]
-        x_obs[ntime] = xob
-        y_obs[ntime] = yob
+    # save data.
+    if savedata is not None and ntime >= ntime_savestart:
+        u_t[ntime-ntime_savestart] = u_truth[ntime+ntstart]
+        u_b[ntime-ntime_savestart,:,:,:] = uens
+        v_t[ntime-ntime_savestart] = v_truth[ntime+ntstart]
+        v_b[ntime-ntime_savestart,:,:,:] = vens
+        dz_t[ntime-ntime_savestart] = dz_truth[ntime+ntstart]
+        dz_b[ntime-ntime_savestart,:,:,:] = dzens
+        obsu1[ntime-ntime_savestart] = obs[0:nobs]
+        obsv1[ntime-ntime_savestart] = obs[nobs:2*nobs]
+        obsu2[ntime-ntime_savestart] = obs[2*nobs:3*nobs]
+        obsu2[ntime-ntime_savestart] = obs[3*nobs:4*nobs]
+        obszsfc[ntime-ntime_savestart] = obs[4*nobs:5*nobs]
+        obszmid[ntime-ntime_savestart] = obs[5*nobs:]
+        x_obs[ntime-ntime_savestart] = xob
+        y_obs[ntime-ntime_savestart] = yob
 
     # prior stats.
     #zsfc_errav,zsfc_sprdav,zmid_errav,zmid_sprdav,m1_errav,m1_sprdav,m2_errav,m2_sprdav,vecwind1_errav,vecwind1_sprdav,vecwind2_errav,vecwind2_sprdav=\
@@ -579,11 +581,11 @@ for ntime in range(nassim):
          ke_errav,ke_sprdav,masstend_diag,totmass))
 
     # save data.
-    if savedata is not None:
-        u_a[ntime,:,:,:] = uens
-        v_a[ntime,:,:,:] = vens
-        dz_a[ntime,:,:,:] = dzens
-        tvar[ntime] = obtimes[ntime+ntstart]
+    if savedata is not None and ntime >= ntime_savestart:
+        u_a[ntime-ntime_savestart,:,:,:] = uens
+        v_a[ntime-ntime_savestart,:,:,:] = vens
+        dz_a[ntime-ntime_savestart,:,:,:] = dzens
+        tvar[ntime-ntime_savestart] = obtimes[ntime+ntstart]
         nc.sync()
 
     # run forecast ensemble to next analysis time

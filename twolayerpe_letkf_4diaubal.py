@@ -57,6 +57,7 @@ threediau = False
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
 nassim = 1600 # assimilation times to run
+ntime_savestart = 600 # if savedata is not None, start saving data at this time
 nanals = 20 # ensemble members
 posterior_stats = False
 # nature run created using twolayer_naturerun.py.
@@ -528,21 +529,21 @@ for ntime in range(nassim):
         uens_mid=uens; vens_mid=vens; dzens_mid=dzens
     hxens = gethofx(uens_mid,vens_mid,ztop-dzens_mid.sum(axis=1),ztop-dzens_mid[:,1,...],indxob,nanals,nobs)
 
-    if savedata is not None:
-        u_t[ntime] = u_truth[ntime+ntstart]
-        u_b[ntime,:,:,:] = uens_mid
-        v_t[ntime] = v_truth[ntime+ntstart]
-        v_b[ntime,:,:,:] = vens_mid
-        dz_t[ntime] = dz_truth[ntime+ntstart]
-        dz_b[ntime,:,:,:] = dzens_mid
-        obsu1[ntime] = obs[0:nobs]
-        obsv1[ntime] = obs[nobs:2*nobs]
-        obsu2[ntime] = obs[2*nobs:3*nobs]
-        obsu2[ntime] = obs[3*nobs:4*nobs]
-        obszsfc[ntime] = obs[4*nobs:5*nobs]
-        obszmid[ntime] = obs[5*nobs:]
-        x_obs[ntime] = xob
-        y_obs[ntime] = yob
+    if savedata is not None and ntime >= ntime_savestart:
+        u_t[ntime-ntime_savestart] = u_truth[ntime+ntstart]
+        u_b[ntime-ntime_savestart,:,:,:] = uens
+        v_t[ntime-ntime_savestart] = v_truth[ntime+ntstart]
+        v_b[ntime-ntime_savestart,:,:,:] = vens
+        dz_t[ntime-ntime_savestart] = dz_truth[ntime+ntstart]
+        dz_b[ntime-ntime_savestart,:,:,:] = dzens
+        obsu1[ntime-ntime_savestart] = obs[0:nobs]
+        obsv1[ntime-ntime_savestart] = obs[nobs:2*nobs]
+        obsu2[ntime-ntime_savestart] = obs[2*nobs:3*nobs]
+        obsu2[ntime-ntime_savestart] = obs[3*nobs:4*nobs]
+        obszsfc[ntime-ntime_savestart] = obs[4*nobs:5*nobs]
+        obszmid[ntime-ntime_savestart] = obs[5*nobs:]
+        x_obs[ntime-ntime_savestart] = xob
+        y_obs[ntime-ntime_savestart] = yob
 
     # calculate LETKF weights
     wts = letkfwts_compute(hxens,obs,oberrvar,covlocal_tmp,n_jobs)
@@ -625,11 +626,11 @@ for ntime in range(nassim):
                update(model,uens_end,vens_end,dzens_end,wts,covinflate1,covinflate2,\
                balvar=balvar,fix_totmass=fix_totmass,profile=profile)
     # save data.
-    if savedata is not None:
-        u_a[ntime,:,:,:] = uens_mid_a
-        v_a[ntime,:,:,:] = vens_mid_a
-        dz_a[ntime,:,:,:] = dzens_mid_a
-        tvar[ntime] = obtimes[ntime+ntstart]
+    if savedata is not None and ntime >= ntime_savestart:
+        u_a[ntime-ntime_savestart,:,:,:] = uens
+        v_a[ntime-ntime_savestart,:,:,:] = vens
+        dz_a[ntime-ntime_savestart,:,:,:] = dzens
+        tvar[ntime-ntime_savestart] = obtimes[ntime+ntstart]
         nc.sync()
 
     # run forecast ensemble to next analysis time
