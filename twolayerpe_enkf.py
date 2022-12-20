@@ -63,6 +63,7 @@ precision = 'float32'
 savedata = None # if not None, netcdf filename to save data.
 #savedata = True # filename given by exptname env var
 nassim = 1600 # assimilation times to run
+ntime_savestart = 600 # if savedata is not None, start saving data at this time
 dzmin = 10. # min layer thickness allowed
 
 nanals = 20 # ensemble members
@@ -70,8 +71,8 @@ nanals = 20 # ensemble members
 # nature run created using twolayer_naturerun.py.
 filename_climo = 'twolayerpe_N64_6hrly_symjet.nc' # file name for forecast model climo
 # perfect model
-filename_truth = filename_climo
-#filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
+#filename_truth = filename_climo
+filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
 
 print('# filename_modelclimo=%s' % filename_climo)
 print('# filename_truth=%s' % filename_truth)
@@ -454,21 +455,21 @@ for ntime in range(nassim):
     # hxens is ensemble in observation space.
     hxens = gethofx(uens,vens,ztop-dzens.sum(axis=1),ztop-dzens[:,1,...],indxob,nanals,nobs)
 
-    if savedata is not None:
-        u_t[ntime] = u_truth[ntime+ntstart]
-        u_b[ntime,:,:,:] = uens
-        v_t[ntime] = v_truth[ntime+ntstart]
-        v_b[ntime,:,:,:] = vens
-        dz_t[ntime] = dz_truth[ntime+ntstart]
-        dz_b[ntime,:,:,:] = dzens
-        obsu1[ntime] = obs[0:nobs]
-        obsv1[ntime] = obs[nobs:2*nobs]
-        obsu2[ntime] = obs[2*nobs:3*nobs]
-        obsu2[ntime] = obs[3*nobs:4*nobs]
-        obszfc[ntime] = obs[4*nobs:5*nobs]
-        obszmid[ntime] = obs[5*nobs:]
-        x_obs[ntime] = xob
-        y_obs[ntime] = yob
+    if savedata is not None and ntime >= ntime_savestart:
+        u_t[ntime-ntime_savestart] = u_truth[ntime+ntstart]
+        u_b[ntime-ntime_savestart,:,:,:] = uens
+        v_t[ntime-ntime_savestart] = v_truth[ntime+ntstart]
+        v_b[ntime-ntime_savestart,:,:,:] = vens
+        dz_t[ntime-ntime_savestart] = dz_truth[ntime+ntstart]
+        dz_b[ntime-ntime_savestart,:,:,:] = dzens
+        obsu1[ntime-ntime_savestart] = obs[0:nobs]
+        obsv1[ntime-ntime_savestart] = obs[nobs:2*nobs]
+        obsu2[ntime-ntime_savestart] = obs[2*nobs:3*nobs]
+        obsu2[ntime-ntime_savestart] = obs[3*nobs:4*nobs]
+        obszsfc[ntime-ntime_savestart] = obs[4*nobs:5*nobs]
+        obszmid[ntime-ntime_savestart] = obs[5*nobs:]
+        x_obs[ntime-ntime_savestart] = xob
+        y_obs[ntime-ntime_savestart] = yob
 
     # EnKF update
     # create state vector.
@@ -536,12 +537,12 @@ for ntime in range(nassim):
             dzens[nmem][1] = dzens[nmem][1] - dzens[nmem][1].mean() + model.ztop - model.zmid
 
     # save data.
-    if savedata is not None:
-        u_a[ntime,:,:,:] = uens
-        v_a[ntime,:,:,:] = vens
-        dz_a[ntime,:,:,:] = dzens
-        tvar[ntime] = obtimes[ntime+ntstart]
-        nc.sync()
+    if savedata is not None and ntime >= ntime_savestart:
+        u_a[ntime-ntime_savestart,:,:,:] = uens
+        v_a[ntime-ntime_savestart,:,:,:] = vens
+        dz_a[ntime-ntime_savestart,:,:,:] = dzens
+        tvar[ntime-ntime_savestart] = obtimes[ntime+ntstart]
+         nc.sync()
 
     # run forecast ensemble to next analysis time
     t1 = time.time()
