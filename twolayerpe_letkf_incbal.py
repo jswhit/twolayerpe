@@ -39,8 +39,8 @@ savedata = None # if not None, netcdf filename to save data.
 # nature run created using twolayer_naturerun.py.
 filename_climo = 'twolayerpe_N64_6hrly_symjet.nc' # file name for forecast model climo
 # perfect model
-filename_truth = filename_climo
-#filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
+#filename_truth = filename_climo
+filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
 linbal = False # use linear (geostrophic) balance instead of nonlinear (gradient) balance.
 dzmin = 10. # min layer thickness allowed
 inflate_before=True # inflate before balance operator applied
