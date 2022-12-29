@@ -378,6 +378,7 @@ def ctltoens(model,xens, xens_b, fsprd):
     vens_b = np.empty((nanals,2,Nt,Nt),dtype)
     uens_sprd = np.empty((2,Nt,Nt),dtype)
     vens_sprd = np.empty((2,Nt,Nt),dtype)
+    dzens_sprd = np.empty((2,Nt,Nt),dtype)
     dzens_b = np.empty((nanals,2,Nt,Nt),dtype)
     uens[:] = xens[:,0:2,:].reshape(nanals,2,Nt,Nt)
     vens[:] = xens[:,2:4,:].reshape(nanals,2,Nt,Nt)
