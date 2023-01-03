@@ -37,8 +37,10 @@ dzspec = ft.grdtospec(dzinc)
 model.ub = ub; model.vb = vb
 model.vrtb = vrtb; model.dzb = dzb
 
-tmax = 10.*86400.
+tmax = 86400.
 nsteps = int(tmax/model.dt) # number of time steps to run
+dzspec = np.zeros_like(divspec)
+divspec = np.zeros_like(dzspec)
 for n in range(nsteps):
     vrtspec, divspec, dzspec = model.rk4step(vrtspec, divspec, dzspec)
 dzpert_bal = model.ft.spectogrd(dzspec)

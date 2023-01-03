@@ -32,7 +32,7 @@ class TwoLayer(TwoLayer_base):
             totmassdiv = (self.ft.spectogrd(ddzdtspec)).sum(axis=0)
             #print(self.t,totmassdiv.min(), totmassdiv.max())
             self.masstendvar = 3600.*np.abs(totmassdiv).mean()
-            print(self.t,self.masstendvar)
+            #print(self.t,self.masstendvar)
         ddzdtspec *= -1
         # diabatic mass flux contribution to continuity
         tmpspec = self.ft.grdtospec(massflux)
