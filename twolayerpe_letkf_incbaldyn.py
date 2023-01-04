@@ -47,7 +47,7 @@ dzmin = 10. # min layer thickness allowed
 inflate_before=True # inflate before balance operator applied
 baldiv = False # include balanced divergence
 update_unbal = True # update unbalanced part
-tmax = 3.*86400. # time to run forced linear model to get balanced flow
+tmax = 1.*86400. # time to run forced linear model to get balanced flow
 
 profile = False # turn on profiling?
 
@@ -339,16 +339,29 @@ def balpert(N,L,dt,upert,vpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal
     vrtb = ft.spectogrd(vrtspec_ensmean)
     ub,vb = ft.getuv(vrtspec_ensmean,divspec_ensmean)
     dzb = dz_ensmean
-    model=TwoLayer_lin(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
+    model=TwoLayer_lin(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=dt,\
     zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax)
+    model.t = 0
     model.ub = ub; model.vb = vb
     model.vrtb = vrtb; model.dzb = dzb
     vrtspec, divspec = ft.getvrtdivspec(upert,vpert)
     divspec = np.zeros_like(vrtspec)
     dzspec = np.zeros_like(vrtspec)
     nsteps = int(tmax/model.dt) # number of time steps to run
+    #div = np.zeros_like(vrtb)
+    #dz = np.zeros_like(vrtb)
     for n in range(nsteps):
         vrtspec, divspec, dzspec = model.rk4step(vrtspec, divspec, dzspec)
+        #divnew = model.ft.spectogrd(divspec)
+        #dznew = model.ft.spectogrd(dzspec)
+        #divdiff = divnew-div
+        #dzdiff = dznew-dz
+        #div = divnew; dz = dznew
+        #divdiffmean = np.sqrt((divdiff**2).mean())
+        #dzdiffmean = np.sqrt((dzdiff**2).mean())
+        #divmean = np.sqrt((div**2).mean())
+        #dzmean = np.sqrt((dz**2).mean())
+        #if n==0 or n==nsteps-1: print(model.t/86400, nanal, dzdiffmean/dzmean, divdiffmean/divmean,model.masstendvar )
     if not baldiv:
         divspec = np.zeros_like(vrtspec)
     upert_bal,vpert_bal = model.ft.getuv(vrtspec,divspec)
@@ -370,6 +383,7 @@ def balenspert(model,upert,vpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linb
         vrtspec, divspec = ft.getvrtdivspec(upert[nanal],vpert[nanal])
         divspec = np.zeros_like(vrtspec)
         dzspec = np.zeros_like(vrtspec)
+        model.t = 0
         #div = np.zeros_like(upert[nanal])
         #dz = np.zeros_like(upert[nanal])
         for n in range(nsteps):
@@ -383,7 +397,7 @@ def balenspert(model,upert,vpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linb
             #dzdiffmean = np.sqrt((dzdiff**2).mean())
             #divmean = np.sqrt((div**2).mean())
             #dzmean = np.sqrt((dz**2).mean())
-            #print(model.t/86400, dzdiffmean/dzmean, divdiffmean/divmean )
+            #if n == 0 or n == nsteps-1: print(model.t/86400, nanal, dzdiffmean/dzmean, divdiffmean/divmean, model.masstendvar )
         if not baldiv:
             divspec = np.zeros_like(vrtspec)
         upert_bal[nanal],vpert_bal[nanal] = model.ft.getuv(vrtspec,divspec)
