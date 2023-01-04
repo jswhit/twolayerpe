@@ -47,7 +47,7 @@ dzmin = 10. # min layer thickness allowed
 inflate_before=True # inflate before balance operator applied
 baldiv = False # include balanced divergence
 update_unbal = True # update unbalanced part
-tmax = 86400./2. # time to run forced linear model to get balanced flow
+tmax = 3.*86400. # time to run forced linear model to get balanced flow
 
 profile = False # turn on profiling?
 
@@ -370,8 +370,20 @@ def balenspert(model,upert,vpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linb
         vrtspec, divspec = ft.getvrtdivspec(upert[nanal],vpert[nanal])
         divspec = np.zeros_like(vrtspec)
         dzspec = np.zeros_like(vrtspec)
+        #div = np.zeros_like(upert[nanal])
+        #dz = np.zeros_like(upert[nanal])
         for n in range(nsteps):
             vrtspec, divspec, dzspec = model.rk4step(vrtspec, divspec, dzspec)
+            #divnew = model.ft.spectogrd(divspec)
+            #dznew = model.ft.spectogrd(dzspec)
+            #divdiff = divnew-div
+            #dzdiff = dznew-dz
+            #div = divnew; dz = dznew
+            #divdiffmean = np.sqrt((divdiff**2).mean())
+            #dzdiffmean = np.sqrt((dzdiff**2).mean())
+            #divmean = np.sqrt((div**2).mean())
+            #dzmean = np.sqrt((dz**2).mean())
+            #print(model.t/86400, dzdiffmean/dzmean, divdiffmean/divmean )
         if not baldiv:
             divspec = np.zeros_like(vrtspec)
         upert_bal[nanal],vpert_bal[nanal] = model.ft.getuv(vrtspec,divspec)
@@ -400,7 +412,7 @@ def enstoctl(model,upert,vpert,dzpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean
     xens[:,8:10,:] = dzpert_unbal[:].reshape(nanals,2,model.ft.Nt**2)
     return xens
 
-def ctltoens(model,xens,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=False,baldiv=baldiv):
+def ctltoens(model,xens,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=False,baldiv=baldiv,tmax=tmax):
     """upert_bal,vpert_bal,upert_unbal,vpert_unbal,dzunbal_pert to upert,vpert,dzpert"""
     nanals = xens.shape[0]
     upert_bal = np.empty((nanals,2,Nt,Nt),dtype)
@@ -415,9 +427,9 @@ def ctltoens(model,xens,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=False,
     vpert_unbal[:] = xens[:,6:8,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     dzpert_unbal[:] = xens[:,8:10,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
     if n_jobs == 0:
-        upert_bal,vpert_bal,dzpert_bal = balenspert(model,upert_bal,vpert_bal,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv)
+        upert_bal,vpert_bal,dzpert_bal = balenspert(model,upert_bal,vpert_bal,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv,tmax=tmax)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balpert)(N,L,dt,upert_bal[nanal],vpert_bal[nanal],vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag1=model.tdrag[0],tdrag2=model.tdrag[1],tdiab=model.tdiab,umax=model.umax,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
+        results = Parallel(n_jobs=n_jobs)(delayed(balpert)(N,L,dt,upert_bal[nanal],vpert_bal[nanal],vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag1=model.tdrag[0],tdrag2=model.tdrag[1],tdiab=model.tdiab,umax=model.umax,div2_diff_efold=model.div2_diff_efold,tmax=tmax) for nanal in range(nanals))
         for nanal in range(nanals):
             upert_bal[nanal],vpert_bal[nanal],dzpert_bal[nanal] = results[nanal]
     upert = upert_bal + upert_unbal
@@ -516,7 +528,7 @@ for ntime in range(nassim):
     vrtspec_ensmean_b, divspec_ensmean_b = model.ft.getvrtdivspec(uensmean_b,vensmean_b)
     upert_b = uens-uensmean_b; vpert_b=vens-vensmean_b
     dzensmean_b = dzens.mean(axis=0); dzpert_b = dzens-dzensmean_b
-    xprime_b = enstoctl(model,upert_b,vpert_b,dzpert_b,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv)
+    xprime_b = enstoctl(model_lin,upert_b,vpert_b,dzpert_b,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv,tmax=tmax)
 
     if not debug_model: 
         # update state vector using letkf weights
@@ -542,13 +554,13 @@ for ntime in range(nassim):
     vensmean_balinc[:] = xensmean_inc[2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
     # get balanced ens mean increments from rotational wind increments
     uensmean_balinc,vensmean_balinc,dzensmean_balinc = \
-    balpert(N,L,dt,uensmean_balinc,vensmean_balinc,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv)
+    balpert(N,L,dt,uensmean_balinc,vensmean_balinc,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv,tmax=tmax)
     uensmean_unbalinc[:] = xensmean_inc[4:6,:].reshape(2,model.ft.Nt,model.ft.Nt)
     vensmean_unbalinc[:] = xensmean_inc[6:8,:].reshape(2,model.ft.Nt,model.ft.Nt)
     dzensmean_unbalinc[:] = xensmean_inc[8:10,:].reshape(2,model.ft.Nt,model.ft.Nt)
     # get total pertubation increments from unbalanced/balanced increments
     # reconstruct total analysis fields
-    upertinc,vpertinc,dzpertinc = ctltoens(model,xprime_a-xprime_b,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv)
+    upertinc,vpertinc,dzpertinc = ctltoens(model_lin,xprime_a-xprime_b,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv,tmax=tmax)
     if not inflate_before: 
         upert = upert_b + upertinc 
         vpert = vpert_b + vpertinc 
