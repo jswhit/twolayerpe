@@ -37,12 +37,27 @@ dzspec = ft.grdtospec(dzinc)
 model.ub = ub; model.vb = vb
 model.vrtb = vrtb; model.dzb = dzb
 
-tmax = 86400.
+tmax = 10.*86400.
 nsteps = int(tmax/model.dt) # number of time steps to run
 dzspec = np.zeros_like(divspec)
 divspec = np.zeros_like(dzspec)
+div = model.ft.spectogrd(divspec)
+dz = model.ft.spectogrd(dzspec)
+eps = 1.e-2
 for n in range(nsteps):
     vrtspec, divspec, dzspec = model.rk4step(vrtspec, divspec, dzspec)
+    divnew = model.ft.spectogrd(divspec)
+    dznew = model.ft.spectogrd(dzspec)
+    divdiff = divnew-div
+    dzdiff = dznew-dz
+    div = divnew; dz = dznew
+    divdiffmean = np.sqrt((divdiff**2).mean())
+    dzdiffmean = np.sqrt((dzdiff**2).mean())
+    divmean = np.sqrt((div**2).mean())
+    dzmean = np.sqrt((dz**2).mean())
+    print(model.t/86400, dzdiffmean/dzmean, divdiffmean/divmean )
+    if dzdiffmean/dzmean < eps and divdiffmean/divmean < eps:
+        break
 dzpert_bal = model.ft.spectogrd(dzspec)
 divpert_bal = model.ft.spectogrd(divspec)
 
