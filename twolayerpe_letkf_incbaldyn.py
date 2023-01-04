@@ -572,9 +572,17 @@ for ntime in range(nassim):
     uensmean_unbalinc[:] = xensmean_inc[4:6,:].reshape(2,model.ft.Nt,model.ft.Nt)
     vensmean_unbalinc[:] = xensmean_inc[6:8,:].reshape(2,model.ft.Nt,model.ft.Nt)
     dzensmean_unbalinc[:] = xensmean_inc[8:10,:].reshape(2,model.ft.Nt,model.ft.Nt)
+    uensmean_a = uensmean_b + uensmean_balinc + uensmean_unbalinc
+    vensmean_a = vensmean_b + vensmean_balinc + vensmean_unbalinc
+    dzensmean_a = dzensmean_b + dzensmean_balinc + dzensmean_unbalinc
+    vrtspec_ensmean_a, divspec_ensmean_a = model.ft.getvrtdivspec(uensmean_a,vensmean_a)
     # get total pertubation increments from unbalanced/balanced increments
     # reconstruct total analysis fields
-    upertinc,vpertinc,dzpertinc = ctltoens(model_lin,xprime_a-xprime_b,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv,tmax=tmax)
+    #upertinc,vpertinc,dzpertinc = ctltoens(model_lin,xprime_a-xprime_b,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv,tmax=tmax)
+    upert_a,vpert_a,dzpert_a = ctltoens(model_lin,xprime_a,vrtspec_ensmean_a,divspec_ensmean_a,dzensmean_a,linbal=linbal,baldiv=baldiv,tmax=tmax)
+    upertinc = upert_a - upert_b
+    vpertinc = vpert_a - vpert_b
+    dzpertinc = dzpert_a - dzpert_b
     if not inflate_before: 
         upert = upert_b + upertinc 
         vpert = vpert_b + vpertinc 
@@ -594,9 +602,9 @@ for ntime in range(nassim):
         upertinc = upert - upert_b
         vpertinc = vpert - vpert_b
         dzpertinc = dzpert - dzpert_b
-    uens = upert_b + uensmean_b + upertinc + uensmean_balinc + uensmean_unbalinc
-    vens = vpert_b + vensmean_b + vpertinc + vensmean_balinc + vensmean_unbalinc
-    dzens = dzpert_b + dzensmean_b + dzpertinc + dzensmean_balinc + dzensmean_unbalinc
+    uens = upert_b + upertinc + uensmean_a
+    vens = vpert_b + vpertinc + vensmean_a
+    dzens = dzpert_b + dzpertinc + dzensmean_a
 
     # make sure there is no negative layer thickness in analysis
     np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
