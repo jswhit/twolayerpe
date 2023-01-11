@@ -89,9 +89,9 @@ diff_order=nc_climo.diff_order
 
 oberrstdev_zmid = 100. # interface height ob error in meters
 oberrstdev_zsfc = ((theta2-theta1)/theta1)*100.  # surface height ob error in meters
-#oberrstdev_wind = 1.   # wind ob error in meters per second
+oberrstdev_wind = 1.   # wind ob error in meters per second
 #oberrstdev_zsfc = 1.e30 # surface height ob error in meters
-oberrstdev_wind = 1.e30 # don't assimilate winds
+#oberrstdev_wind = 1.e30 # don't assimilate winds
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
@@ -146,7 +146,6 @@ print("# hcovlocal=%g linbal=%s baldiv=%s covinf=%s nanals=%s" %\
 # replacement) from the model grid
 #nobs = Nt**2 # observe full grid
 nobs = Nt**2//16
-#nobs = Nt**2//25
 
 # nature run
 nc_truth = Dataset(filename_truth)
@@ -365,8 +364,8 @@ def enstoctl(model,upert,vpert,dzpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean
         upert_bal,vpert_bal,dzpert_bal = balenspert(model,upert,vpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv)
     else:
         results = Parallel(n_jobs=n_jobs)(delayed(balpert)(N,L,dt,upert[nanal],vpert[nanal],vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag1=model.tdrag[0],tdrag2=model.tdrag[1],tdiab=model.tdiab,umax=model.umax,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
-        upert_bal = np.empty(uens.shape, uens.dtype); vpert_bal = np.empty(vens.shape, vens.dtype)
-        dzpert_bal = np.empty(dzens.shape, dzens.dtype)
+        upert_bal = np.empty(upert.shape, upert.dtype); vpert_bal = np.empty(vpert.shape, vpert.dtype)
+        dzpert_bal = np.empty(dzpert.shape, dzpert.dtype)
         for nanal in range(nanals):
             upert_bal[nanal],vpert_bal[nanal],dzpert_bal[nanal] = results[nanal]
     upert_unbal = upert-upert_bal
