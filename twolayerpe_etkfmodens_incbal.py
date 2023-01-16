@@ -7,14 +7,6 @@ from enkf_utils import cartdist,gaspcohn
 from scipy.linalg import eigh, svd
 from joblib import Parallel, delayed
 
-def symsqrtinv_psd(a):
-    """inverse and inverse symmetric square-root of a symmetric positive
-    definite matrix"""
-    evals, eigs = eigh(a,driver='evd')
-    symsqrtinv =  (eigs * (1./np.sqrt(np.maximum(evals,0)))).dot(eigs.T)
-    inv =  (eigs * (1./np.maximum(evals,0))).dot(eigs.T)
-    return symsqrtinv, inv
-
 def modens(enspert,sqrtcovlocal):
     nanals = enspert.shape[0]
     neig = sqrtcovlocal.shape[0]
@@ -116,8 +108,8 @@ diff_order=nc_climo.diff_order
 oberrstdev_zmid = 100. # interface height ob error in meters
 oberrstdev_zsfc = ((theta2-theta1)/theta1)*100.  # surface height ob error in meters
 oberrstdev_wind = 1.   # wind ob error in meters per second
-#oberrstdev_zsfc = 1.e30 # surface height ob error in meters
-#oberrstdev_wind = 1.e30 # don't assimilate winds
+#oberrstdev_zsfc = np.sqrt(1.e30) # surface height ob error in meters
+#oberrstdev_wind = np.sqrt(1.e30) # don't assimilate winds
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
@@ -141,12 +133,16 @@ if not read_restart:
     dz_climo = nc_climo.variables['dz']
     indxran = rsics.choice(u_climo.shape[0],size=nanals,replace=False)
 else:
+    if len(sys.argv) > 3:
+        nt = int(sys.argv[3])
+    else:
+        nt = -1
     ncinit = Dataset('%s.nc' % exptname, mode='r', format='NETCDF4_CLASSIC')
     ncinit.set_auto_mask(False)
-    uens[:] = ncinit.variables['u_b'][-1,...]
-    vens[:] = ncinit.variables['v_b'][-1,...]
-    dzens[:] = ncinit.variables['dz_b'][-1,...]
-    tstart = ncinit.variables['t'][-1]
+    uens[:] = ncinit.variables['u_b'][nt,...]
+    vens[:] = ncinit.variables['v_b'][nt,...]
+    dzens[:] = ncinit.variables['dz_b'][nt,...]
+    tstart = ncinit.variables['t'][nt]
     #for nanal in range(nanals):
     #    print(nanal, uens[nanal].min(), uens[nanal].max())
 
@@ -181,10 +177,11 @@ dz_truth = nc_truth.variables['dz']
 
 # set up arrays for obs and localization function
 print('# random network nobs = %s' % nobs)
-oberrstd = np.ones(6*nobs,dtype)
-oberrstd[0:4*nobs] = oberrstdev_wind*oberrstd[0:4*nobs]
-oberrstd[4*nobs:5*nobs] = oberrstdev_zsfc*oberrstd[4*nobs:5*nobs]
-oberrstd[5*nobs:] = oberrstdev_zmid*oberrstd[5*nobs:]
+oberrvar = np.ones(6*nobs,dtype)
+oberrvar[0:4*nobs] = oberrstdev_wind**2*oberrvar[0:4*nobs]
+oberrvar[4*nobs:5*nobs] = oberrstdev_zsfc**2*oberrvar[4*nobs:5*nobs]
+oberrvar[5*nobs:] = oberrstdev_zmid**2*oberrvar[5*nobs:]
+oberrstd = np.sqrt(oberrvar)
 
 nobstot = 6*nobs
 obs = np.empty(nobstot,dtype)
@@ -529,6 +526,15 @@ for ntime in range(nassim):
     if nobs == Nt**2: # observe every grid point
         indxob = np.arange(Nt**2)
         np.random.shuffle(indxob) # shuffle needed or serial filter blows up (??)
+    elif nobs == 1:
+        zintensmean = model.ztop-dzens[1].mean(axis=0)
+        zintprime = model.ztop-dzens[1]-zintensmean
+        zintsprd  = (zintprime**2).sum(axis=0)/(nanals-1)
+        #print(zintsprd.min(), zintsprd.max())
+        #jmax,imax=np.unravel_index(zintsprd.argmax(), zintsprd.shape)
+        #print(zintsprd[jmax,imax])
+        indxob = np.atleast_1d(zintsprd.argmax())
+        print(indxob)
     else: # random selection of grid points
         indxob = rsobs.choice(Nt**2,nobs,replace=False)
     obs[0:nobs:] = u_truth[ntime+ntstart,0,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
@@ -586,7 +592,7 @@ for ntime in range(nassim):
     upert_bm = modens(upert_b,sqrtcovlocal)
     vpert_bm = modens(vpert_b,sqrtcovlocal)
     dzpert_bm = modens(dzpert_b,sqrtcovlocal)
-    hxprime_bm = gethofx(upert_bm,vpert_bm,dzpert_bm.sum(axis=1),dzpert_bm[:,1,...],indxob,nanals2,nobs)
+    hxprime_bm = gethofx(upert_bm,vpert_bm,-dzpert_bm.sum(axis=1),-dzpert_bm[:,1,...],indxob,nanals2,nobs)
 
     # modulate after partitioning
     xprime_b,xprime_bm = enstoctl2(model,upert_b,vpert_b,dzpert_b,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,sqrtcovlocal,linbal=linbal,baldiv=baldiv2)
@@ -661,7 +667,9 @@ for ntime in range(nassim):
         for k in range(xprime_b.shape[1]):
             # increments constructed from weighted modulated ensemble member prior perts.
             xensmean_inc[k, :] = np.dot(wts_ensmean,xprime_bm[:,k,:])
+            #print(k,xensmean_inc[k,:].min(),xensmean_inc[k,:].max())
             xprime_a[:,k,:] = xprime_b[:,k,:] + np.dot(wts_ensperts,xprime_bm[:,k,:])
+        xprime_a = xprime_a - xprime_a.mean(axis=0)
 
         t2 = time.time()
         if profile: print('cpu time for EnKF update',t2-t1)
@@ -703,6 +711,29 @@ for ntime in range(nassim):
     uens = upert_b + uensmean_b + upertinc + uensmean_balinc + uensmean_unbalinc
     vens = vpert_b + vensmean_b + vpertinc + vensmean_balinc + vensmean_unbalinc
     dzens = dzpert_b + dzensmean_b + dzpertinc + dzensmean_balinc + dzensmean_unbalinc
+
+    if nobs==1: # single ob, set read_restart=True
+        uensmean_a = uens.mean(axis=0)
+        vensmean_a = vens.mean(axis=0)
+        dzensmean_a = dzens.mean(axis=0)
+        zsensmean_b = dzensmean_b.sum(axis=0)
+        zsensmean_a = dzensmean_a.sum(axis=0)
+        import matplotlib
+        matplotlib.use('agg')
+        import matplotlib.pyplot as plt
+        dzplot = (dzensmean_a - dzensmean_b)[1]
+        zsplot = zsensmean_a-zsensmean_b
+        uplot = (uensmean_a - uensmean_b)[1]
+        vplot = (vensmean_a - vensmean_b)[1]
+        #print(dzplot.min(), dzplot.max())
+        print(zsplot.min(), zsplot.max())
+        plt.figure()
+        vmin = -0.1; vmax = 0.1
+        plt.imshow(vplot,cmap=plt.cm.bwr,vmin=vmin,vmax=vmax,interpolation="nearest")
+        plt.colorbar()
+        plt.title('zs increment (analysis)')
+        plt.savefig('zsinc.png')
+        raise SystemExit
 
     # make sure there is no negative layer thickness in analysis
     np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)

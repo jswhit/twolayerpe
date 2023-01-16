@@ -63,9 +63,9 @@ posterior_stats = False
 # nature run created using twolayer_naturerun.py.
 filename_climo = 'twolayerpe_N64_6hrly_symjet.nc' # file name for forecast model climo
 # perfect model
-filename_truth = filename_climo
+#filename_truth = filename_climo
 # imperfect model (from higher res nature run)
-#filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
+filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
 diff_efold = None # use diffusion from climo file
 linbal = False
 dzmin = 10. # min layer thickness allowed
@@ -113,9 +113,9 @@ diff_order=nc_climo.diff_order
 
 oberrstdev_zmid = 100. # interface height ob error in meters
 oberrstdev_zsfc = ((theta2-theta1)/theta1)*100.  # surface height ob error in meters
-#oberrstdev_wind = 1.   # wind ob error in meters per second
+oberrstdev_wind = 1.   # wind ob error in meters per second
 #oberrstdev_zsfc = 1.e30 # surface height ob error in meters
-oberrstdev_wind = 1.e30 # don't assimilate winds
+#oberrstdev_wind = 1.e30 # don't assimilate winds
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
@@ -180,9 +180,9 @@ dz_truth = nc_truth.variables['dz']
 # set up arrays for obs and localization function
 print('# random network nobs = %s' % nobs)
 oberrvar = np.ones(6*nobs,dtype)
-oberrvar[0:4*nobs] = oberrstdev_wind*oberrvar[0:4*nobs]
-oberrvar[4*nobs:5*nobs] = oberrstdev_zsfc*oberrvar[4*nobs:5*nobs]
-oberrvar[5*nobs:] = oberrstdev_zmid*oberrvar[5*nobs:]
+oberrvar[0:4*nobs] = oberrstdev_wind**2*oberrvar[0:4*nobs]
+oberrvar[4*nobs:5*nobs] = oberrstdev_zsfc**2*oberrvar[4*nobs:5*nobs]
+oberrvar[5*nobs:] = oberrstdev_zmid**2*oberrvar[5*nobs:]
 
 obs = np.empty(6*nobs,dtype)
 covlocal1 = np.empty(Nt**2,dtype)

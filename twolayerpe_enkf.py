@@ -105,9 +105,9 @@ diff_order=nc_climo.diff_order
 
 oberrstdev_zmid = 100. # interface height ob error in meters
 oberrstdev_zsfc = ((theta2-theta1)/theta1)*100.  # surface height ob error in meters
-#oberrstdev_wind = 1.   # wind ob error in meters per second
+oberrstdev_wind = 1.   # wind ob error in meters per second
 #oberrstdev_zsfc = 1.e30 # surface height ob error in meters
-oberrstdev_wind = 1.e30 # don't assimilate winds
+#oberrstdev_wind = 1.e30 # don't assimilate winds
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
@@ -175,9 +175,9 @@ dz_truth = nc_truth.variables['dz']
 # set up arrays for obs and localization function
 print('# random network nobs = %s' % nobs)
 oberrvar = np.ones(6*nobs,dtype)
-oberrvar[0:4*nobs] = oberrstdev_wind*oberrvar[0:4*nobs]
-oberrvar[4*nobs:5*nobs] = oberrstdev_zsfc*oberrvar[4*nobs:5*nobs]
-oberrvar[5*nobs:] = oberrstdev_zmid*oberrvar[5*nobs:]
+oberrvar[0:4*nobs] = oberrstdev_wind**2*oberrvar[0:4*nobs]
+oberrvar[4*nobs:5*nobs] = oberrstdev_zsfc**2*oberrvar[4*nobs:5*nobs]
+oberrvar[5*nobs:] = oberrstdev_zmid**2*oberrvar[5*nobs:]
 
 obs = np.empty(6*nobs,dtype)
 covlocal1 = np.empty(Nt**2,dtype)
@@ -474,6 +474,8 @@ for ntime in range(nassim):
     # EnKF update
     # create state vector.
     xens = enstoctl(model,uens,vens,dzens,ivar=ivar)
+    uensmean_b=uens.mean(axis=0); vensmean_b=vens.mean(axis=0)
+    dzensmean_b=dzens.mean(axis=0)
     xensmean_b = xens.mean(axis=0)
     xprime = xens-xensmean_b
     fsprd = (xprime**2).sum(axis=0)/(nanals-1)
@@ -503,9 +505,15 @@ for ntime in range(nassim):
                 for n in range(model.ft.Nt**2):
                     xensmean_a[k, n] = xensmean_b[k,n] + (wtsmean[n]*xprime[:, k, n]).sum()
                     xprime_a[:, k, n] = np.dot(wts[n].T, xprime[:, k, n])
+                xensmean_inc =  xensmean_a[k,:]-xensmean_b[k,:]
+                #print(k,xensmean_inc.min(),xensmean_inc.max())
             xens = xprime_a + xensmean_a
         else:
             xens = serial_update(xens,hxens,obs,oberrvar,covlocal_tmp,obcovlocal)
+            xensmean_a = xens.mean(axis=0)
+            for k in range(xens.shape[1]): # only update balanced u,v
+                xensmean_inc =  xensmean_a[k,:]-xensmean_b[k,:]
+                #print(k,xensmean_inc.min(),xensmean_inc.max())
         t2 = time.time()
         if profile: print('cpu time for EnKF update',t2-t1)
 
@@ -530,6 +538,43 @@ for ntime in range(nassim):
 
     # back to 3d state vector
     uens,vens,dzens = ctltoens(model,xens,ivar=ivar)
+    if nobs==1:
+    #if 1:
+        uensmean_a = uens.mean(axis=0)
+        vensmean_a = vens.mean(axis=0)
+        dzensmean_a = dzens.mean(axis=0)
+        zsensmean_b = dzensmean_b.sum(axis=0)
+        zsensmean_a = dzensmean_a.sum(axis=0)
+        import matplotlib
+        matplotlib.use('agg')
+        import matplotlib.pyplot as plt
+        dzplot = (dzensmean_a - dzensmean_b)[1]
+        zsplot = zsensmean_a-zsensmean_b
+        uplot = (uensmean_a - uensmean_b)[1]
+        vplot = (vensmean_a - vensmean_b)[1]
+        print('uplot',uplot.min(), uplot.max())
+        print('vplot',vplot.min(), vplot.max())
+        print('dzplot',dzplot.min(), dzplot.max())
+        plt.figure()
+        vmin = -25; vmax = 25
+        plt.imshow(vplot,cmap=plt.cm.bwr,vmin=vmin,vmax=vmax,interpolation="nearest")
+        plt.colorbar()
+        plt.title('v increment')
+        plt.savefig('vinc.png')
+        plt.figure()
+        vmin = -25; vmax = 25
+        plt.imshow(uplot,cmap=plt.cm.bwr,vmin=vmin,vmax=vmax,interpolation="nearest")
+        plt.colorbar()
+        plt.title('u increment')
+        plt.savefig('uinc.png')
+        plt.figure()
+        vmin = -2500; vmax = 2500
+        plt.imshow(dzplot,cmap=plt.cm.bwr,vmin=vmin,vmax=vmax,interpolation="nearest")
+        plt.colorbar()
+        plt.title('h increment')
+        plt.savefig('hinc.png')
+        raise SystemExit
+
     np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
     if fix_totmass:
         for nmem in range(nanals):

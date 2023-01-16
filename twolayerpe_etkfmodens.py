@@ -1,15 +1,31 @@
 import numpy as np
 from netCDF4 import Dataset
 import sys, time, os
-from twolayer_bal import TwoLayer, run_model
+from twolayer import TwoLayer, run_model
 from pyfft import Fouriert
-from enkf_utils import cartdist,letkfwts_compute2,gaspcohn
+from enkf_utils import cartdist,gaspcohn
+from scipy.linalg import eigh
 from joblib import Parallel, delayed
 
-# LETKF cycling for two-layer pe turbulence model with interface height obs.
-# horizontal localization (no vertical).
+def modens(enspert,sqrtcovlocal):
+    nanals = enspert.shape[0]
+    neig = sqrtcovlocal.shape[0]
+    #nlevs = enspert.shape[1]
+    #Nt = enspert.shape[2]
+    #enspertm = np.empty((nanals*neig,nlevs,Nt,Nt),enspert.dtype)
+    #for k in range(nlevs):
+    #   nanal2 = 0
+    #   for j in range(neig):
+    #       for nanal in range(nanals):
+    #           enspertm[nanal2,k,...] = enspert[nanal,k,...]*sqrtcovlocal[j,...]
+    #           nanal2+=1
+    enspertm = np.multiply(np.repeat(sqrtcovlocal[:,np.newaxis,:,:],nanals,axis=0),np.tile(enspert,(neig,1,1,1)))
+    #print(sqrtcovlocal.min(), sqrtcovlocal.max(),(enspertm-enspertm2).min(), (enspertm-enspertm2).max())
+    return enspertm
+
+# GETKF cycling for two-layer pe turbulence model.
+# model-space horizontal localization (no vertical).
 # Relaxation to prior spread inflatino.
-# Balanced/unbalanced partitioning using incremental balance.
 
 if len(sys.argv) == 1:
    msg="""
@@ -32,6 +48,7 @@ div2_diff_efold=1.e30
 fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
 posterior_stats = False
 nassim = 1600 # assimilation times to run
+#nassim = 10
 ntime_savestart = 600 # if savedata is not None, start saving data at this time
 nanals = 20 # ensemble members
 savedata = None # if not None, netcdf filename to save data.
@@ -41,11 +58,7 @@ filename_climo = 'twolayerpe_N64_6hrly_symjet.nc' # file name for forecast model
 # perfect model
 #filename_truth = filename_climo
 filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for forecast model climo
-linbal = False # use linear (geostrophic) balance instead of nonlinear (gradient) balance.
 dzmin = 10. # min layer thickness allowed
-inflate_before=True # inflate before balance operator applied
-baldiv = False # include balanced divergence
-update_unbal = True # update unbalanced part
 
 profile = False # turn on profiling?
 
@@ -90,8 +103,8 @@ diff_order=nc_climo.diff_order
 oberrstdev_zmid = 100. # interface height ob error in meters
 oberrstdev_zsfc = ((theta2-theta1)/theta1)*100.  # surface height ob error in meters
 oberrstdev_wind = 1.   # wind ob error in meters per second
-#oberrstdev_zsfc = 1.e30 # surface height ob error in meters
-#oberrstdev_wind = 1.e30 # don't assimilate winds
+#oberrstdev_zsfc = np.sqrt(1.e30) # surface height ob error in meters
+#oberrstdev_wind = np.sqrt(1.e30) # don't assimilate winds
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
@@ -115,12 +128,16 @@ if not read_restart:
     dz_climo = nc_climo.variables['dz']
     indxran = rsics.choice(u_climo.shape[0],size=nanals,replace=False)
 else:
+    if len(sys.argv) > 3:
+        nt = int(sys.argv[3])
+    else:
+        nt = -1
     ncinit = Dataset('%s.nc' % exptname, mode='r', format='NETCDF4_CLASSIC')
     ncinit.set_auto_mask(False)
-    uens[:] = ncinit.variables['u_b'][-1,...]
-    vens[:] = ncinit.variables['v_b'][-1,...]
-    dzens[:] = ncinit.variables['dz_b'][-1,...]
-    tstart = ncinit.variables['t'][-1]
+    uens[:] = ncinit.variables['u_b'][nt,...]
+    vens[:] = ncinit.variables['v_b'][nt,...]
+    dzens[:] = ncinit.variables['dz_b'][nt,...]
+    tstart = ncinit.variables['t'][nt]
     #for nanal in range(nanals):
     #    print(nanal, uens[nanal].min(), uens[nanal].max())
 
@@ -139,13 +156,14 @@ if not read_restart:
 else:
     ncinit.close()
 
-print("# hcovlocal=%g linbal=%s baldiv=%s covinf=%s nanals=%s" %\
-         (hcovlocal_scale/1000.,linbal,baldiv,covinflate,nanals))
+print("# hcovlocal=%g covinf=%s nanals=%s" %\
+         (hcovlocal_scale/1000.,covinflate,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
 #nobs = Nt**2 # observe full grid
 nobs = Nt**2//16
+#nobs = 1
 
 # nature run
 nc_truth = Dataset(filename_truth)
@@ -159,11 +177,15 @@ oberrvar = np.ones(6*nobs,dtype)
 oberrvar[0:4*nobs] = oberrstdev_wind**2*oberrvar[0:4*nobs]
 oberrvar[4*nobs:5*nobs] = oberrstdev_zsfc**2*oberrvar[4*nobs:5*nobs]
 oberrvar[5*nobs:] = oberrstdev_zmid**2*oberrvar[5*nobs:]
+if nobs == 1:
+    oberrvar[0:5:nobs]=1.e30
+oberrstd = np.sqrt(oberrvar)
 
-obs = np.empty(6*nobs,dtype)
+nobstot = 6*nobs
+obs = np.empty(nobstot,dtype)
 covlocal1 = np.empty(Nt**2,dtype)
 covlocal1_tmp = np.empty((nobs,Nt**2),dtype)
-covlocal_tmp = np.empty((6*nobs,Nt**2),dtype)
+covlocal_tmp = np.empty((nobstot,Nt**2),dtype)
 
 obtimes = nc_truth.variables['t'][:]
 if read_restart:
@@ -328,81 +350,48 @@ def gethofx(uens,vens,zsfcens,zmidens,indxob,nanals,nobs):
         hxens[nanal,5*nobs:] = zmidens[nanal,...].ravel()[indxob] # interface height obs
     return hxens
 
-def balpert(N,L,dt,upert,vpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=False,baldiv=baldiv,\
-           theta1=300,theta2=320,f=1.e-4,div2_diff_efold=1.e30,\
-           zmid=5.e3,ztop=10.e3,diff_efold=6.*3600.,diff_order=8,tdrag1=10*86400,tdrag2=10*86400,tdiab=20*86400,umax=8):
-    ft = Fouriert(N,L,threads=1)
-    model=TwoLayer(ft,dt,theta1=theta1,theta2=theta2,f=f,div2_diff_efold=div2_diff_efold,\
-    zmid=zmid,ztop=ztop,diff_efold=diff_efold,diff_order=diff_order,tdrag1=tdrag[0],tdrag2=tdrag[1],tdiab=tdiab,umax=umax)
-    vrtspec, divspec = ft.getvrtdivspec(upert,vpert)
-    dzpert_bal,divpert_bal = model.nlbalinc(vrtspec_ensmean,divspec_ensmean,dz_ensmean,vrtspec,linbal=linbal,baldiv=baldiv)
-    if baldiv:
-        divspec = model.ft.grdtospec(divpert_bal)
-    else:
-        divspec = np.zeros_like(vrtspec)
-    upert_bal,vpert_bal = model.ft.getuv(vrtspec,divspec)
-    return upert_bal,vpert_bal,dzpert_bal
-
-def balenspert(model,upert,vpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv):
-    upert_bal = np.empty_like(upert)
-    vpert_bal = np.empty_like(vpert)
-    dzpert_bal = np.empty_like(vpert)
-    for nanal in range(nanals):
-        vrtspec, divspec = ft.getvrtdivspec(upert[nanal],vpert[nanal])
-        dzpert_bal[nanal],divpert_bal = model.nlbalinc(vrtspec_ensmean,divspec_ensmean,dz_ensmean,vrtspec,linbal=linbal,baldiv=baldiv)
-        if baldiv:
-            divspec = model.ft.grdtospec(divpert_bal)
-        else:
-            divspec = np.zeros_like(vrtspec)
-        upert_bal[nanal],vpert_bal[nanal] = model.ft.getuv(vrtspec,divspec)
-    return upert_bal, vpert_bal, dzpert_bal
-
-def enstoctl(model,upert,vpert,dzpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=False,baldiv=baldiv):
-    """upert,vpert,dzpert to upert_bal,vpert_bal,upert_unbal,vpert_unbal,dzunbal_pert"""
-    nanals = upert.shape[0]
-    if n_jobs == 0:
-        upert_bal,vpert_bal,dzpert_bal = balenspert(model,upert,vpert,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv)
-    else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balpert)(N,L,dt,upert[nanal],vpert[nanal],vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag1=model.tdrag[0],tdrag2=model.tdrag[1],tdiab=model.tdiab,umax=model.umax,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
-        upert_bal = np.empty(upert.shape, upert.dtype); vpert_bal = np.empty(vpert.shape, vpert.dtype)
-        dzpert_bal = np.empty(dzpert.shape, dzpert.dtype)
-        for nanal in range(nanals):
-            upert_bal[nanal],vpert_bal[nanal],dzpert_bal[nanal] = results[nanal]
-    upert_unbal = upert-upert_bal
-    vpert_unbal = vpert-vpert_bal
-    dzpert_unbal = dzpert-dzpert_bal
-    xens = np.empty((nanals,10,Nt**2),dtype)
-    xens[:,0:2,:] = upert_bal[:].reshape(nanals,2,model.ft.Nt**2) # carries signal of balanced part
-    xens[:,2:4,:] = vpert_bal[:].reshape(nanals,2,model.ft.Nt**2)
-    xens[:,4:6,:] = upert_unbal[:].reshape(nanals,2,model.ft.Nt**2)
-    xens[:,6:8,:] = vpert_unbal[:].reshape(nanals,2,model.ft.Nt**2)
-    xens[:,8:10,:] = dzpert_unbal[:].reshape(nanals,2,model.ft.Nt**2)
+def enstoctl_mean(uens,vens,dzens):
+    Nt = uens.shape[-1]
+    xens = np.empty((6,Nt**2),uens.dtype)
+    # update u,v
+    xens[0:2,:] = uens.reshape(2,Nt**2)
+    xens[2:4,:] = vens.reshape(2,Nt**2)
+    xens[4:6,:] = dzens.reshape(2,Nt**2)
     return xens
 
-def ctltoens(model,xens,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=False,baldiv=baldiv):
-    """upert_bal,vpert_bal,upert_unbal,vpert_unbal,dzunbal_pert to upert,vpert,dzpert"""
-    nanals = xens.shape[0]
-    upert_bal = np.empty((nanals,2,Nt,Nt),dtype)
-    vpert_bal = np.empty((nanals,2,Nt,Nt),dtype)
-    dzpert_bal = np.empty((nanals,2,Nt,Nt),dtype)
-    upert_unbal = np.empty((nanals,2,Nt,Nt),dtype)
-    vpert_unbal = np.empty((nanals,2,Nt,Nt),dtype)
-    dzpert_unbal = np.empty((nanals,2,Nt,Nt),dtype)
-    upert_bal[:] = xens[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    vpert_bal[:] = xens[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    upert_unbal[:] = xens[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    vpert_unbal[:] = xens[:,6:8,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    dzpert_unbal[:] = xens[:,8:10,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-    if n_jobs == 0:
-        upert_bal,vpert_bal,dzpert_bal = balenspert(model,upert_bal,vpert_bal,vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv)
+def enstoctl(uens,vens,dzens,sqrtcovlocal):
+    nanals = uens.shape[0]
+    Nt = uens.shape[-1]
+    xens = np.empty((nanals,6,Nt**2),uens.dtype)
+    # update u,v
+    xens[:,0:2,:] = uens[:].reshape(nanals,2,Nt**2)
+    xens[:,2:4,:] = vens[:].reshape(nanals,2,Nt**2)
+    xens[:,4:6,:] = dzens[:].reshape(nanals,2,Nt**2)
+    # modulated ensemble
+    neig = sqrtcovlocal.shape[0]
+    nanals2 = nanals*neig
+    if neig > 1:
+        upert = modens(uens,sqrtcovlocal)
+        vpert = modens(vens,sqrtcovlocal)
+        dzpert = modens(dzens,sqrtcovlocal)
+        xens2 = np.empty((nanals2,6,Nt**2),uens.dtype)
+        xens2[:,0:2,:] = upert[:].reshape(nanals2,2,Nt**2) 
+        xens2[:,2:4,:] = vpert[:].reshape(nanals2,2,Nt**2)
+        xens2[:,4:6,:] = dzpert[:].reshape(nanals2,2,Nt**2)
     else:
-        results = Parallel(n_jobs=n_jobs)(delayed(balpert)(N,L,dt,upert_bal[nanal],vpert_bal[nanal],vrtspec_ensmean,divspec_ensmean,dz_ensmean,linbal=linbal,baldiv=baldiv,theta1=model.theta1,theta2=model.theta2,zmid=model.zmid,ztop=model.ztop,diff_efold=model.diff_efold,diff_order=model.diff_order,tdrag1=model.tdrag[0],tdrag2=model.tdrag[1],tdiab=model.tdiab,umax=model.umax,div2_diff_efold=model.div2_diff_efold) for nanal in range(nanals))
-        for nanal in range(nanals):
-            upert_bal[nanal],vpert_bal[nanal],dzpert_bal[nanal] = results[nanal]
-    upert = upert_bal + upert_unbal
-    vpert = vpert_bal + vpert_unbal
-    dzpert = dzpert_bal + dzpert_unbal
-    return upert,vpert,dzpert
+        xens2 = xens
+    return xens, xens2
+
+def ctltoens(xens):
+    nanals = xens.shape[0]
+    Nt = int(np.sqrt(xens.shape[-1]))
+    uens = np.empty((nanals,2,Nt,Nt),xens.dtype)
+    vens = np.empty((nanals,2,Nt,Nt),xens.dtype)
+    dzens = np.empty((nanals,2,Nt,Nt),xens.dtype)
+    uens[:] = xens[:,0:2,:].reshape(nanals,2,Nt,Nt)
+    vens[:] = xens[:,2:4,:].reshape(nanals,2,Nt,Nt)
+    dzens[:] = xens[:,4:6,:].reshape(nanals,2,Nt,Nt)
+    return uens,vens,dzens
 
 def inflation(xprime_a,xprime_b,covinflate):
     nanals = xprime_a.shape[0]
@@ -411,19 +400,38 @@ def inflation(xprime_a,xprime_b,covinflate):
     # relaxation to prior stdev (Whitaker & Hamill 2012)
     asprd = np.sqrt(asprd); fsprd = np.sqrt(fsprd)
     inflation_factor = 1.+covinflate*(fsprd-asprd)/asprd
-    #inflation_factor = np.where(inflation_factor < 1, 1. inflation_factor)
-    #print(inflation_factor.min(), inflation_factor.max(), inflation_factor.mean())
     return xprime_a*inflation_factor
-    #return xprime_a*inflation_factor.mean() # constant inflation factor
+
+# specify localization matrix and square root
+# (two-dimensional periodic domain with Nt x Nt)
+t1 = time.time()
+noloc = False
+if noloc:
+    neig = 1
+    sqrtcovlocal = np.ones((neig,Nt,Nt),np.float32)
+else:    
+    covlocal = np.zeros((Nt**2,Nt**2),np.float32)
+    xx = model.x.reshape(Nt**2)
+    yy = model.y.reshape(Nt**2)
+    for n in range(Nt**2):
+        dist = cartdist(xx[n],yy[n],x,y,nc_climo.L,nc_climo.L)
+        covlocal[:,n] = (gaspcohn(dist/hcovlocal_scale)).reshape(Nt**2)
+    evals, evecs = eigh(covlocal,driver='evd')
+    neig = 1
+    for nn in range(1,Nt**2):
+        percentvar = evals[-nn:].sum()/evals.sum()
+        if percentvar > 0.98:
+            neig = nn
+            break
+    print('#neig = ',neig)
+    evecs_norm = (evecs*np.sqrt(evals/percentvar)).T
+    sqrtcovlocal = evecs_norm[-neig:,:].reshape(neig,Nt,Nt)
+    t2 = time.time()
+    if profile: print('time for sqrtcovlocal calc',t2-t1)
+nanals2 = neig*nanals
 
 masstend_diag = 0.
 for ntime in range(nassim):
-
-    # turn off balanced divergence and unbalanced update in spinup
-    if ntime < 100:
-        baldiv2=False
-    else:
-        baldiv2=baldiv
 
     # check model clock
     if model.t != obtimes[ntime+ntstart]:
@@ -435,6 +443,15 @@ for ntime in range(nassim):
     if nobs == Nt**2: # observe every grid point
         indxob = np.arange(Nt**2)
         np.random.shuffle(indxob) # shuffle needed or serial filter blows up (??)
+    elif nobs == 1:
+        zintensmean = model.ztop-dzens[1].mean(axis=0)
+        zintprime = model.ztop-dzens[1]-zintensmean
+        zintsprd  = (zintprime**2).sum(axis=0)/(nanals-1)
+        #print(zintsprd.min(), zintsprd.max())
+        #jmax,imax=np.unravel_index(zintsprd.argmax(), zintsprd.shape)
+        #print(zintsprd[jmax,imax])
+        indxob = np.atleast_1d(zintsprd.argmax())
+        print(indxob)
     else: # random selection of grid points
         indxob = rsobs.choice(Nt**2,nobs,replace=False)
     obs[0:nobs:] = u_truth[ntime+ntstart,0,:,:].ravel()[indxob] + rsobs.normal(scale=oberrstdev_wind,size=nobs)
@@ -448,24 +465,11 @@ for ntime in range(nassim):
     xob = x.ravel()[indxob]
     yob = y.ravel()[indxob]
 
-    # compute covariance localization function for each ob
-    for nob in range(nobs):
-        dist = cartdist(xob[nob],yob[nob],x,y,nc_climo.L,nc_climo.L)
-        covlocal1 = gaspcohn(dist/hcovlocal_scale)
-        covlocal1_tmp[nob] = covlocal1.ravel()
-        dist = cartdist(xob[nob],yob[nob],xob,yob,nc_climo.L,nc_climo.L)
-    covlocal_tmp[nobs:2*nobs,:] = covlocal1_tmp
-    covlocal_tmp[2*nobs:3*nobs,:] = covlocal1_tmp
-    covlocal_tmp[3*nobs:4*nobs,:] = covlocal1_tmp
-    covlocal_tmp[4*nobs:5*nobs,:] = covlocal1_tmp
-    covlocal_tmp[5*nobs:,:] = covlocal1_tmp
-
     # compute forward operator.
     # hxens is ensemble in observation space.
     hxens = gethofx(uens,vens,ztop-dzens.sum(axis=1),ztop-dzens[:,1,...],indxob,nanals,nobs)
-
-    # calculate LETKF weights
-    wts,wtsmean = letkfwts_compute2(hxens,obs,oberrvar,covlocal_tmp,n_jobs)
+    hxensmean = hxens.mean(axis=0)
+    hxprime_b = hxens - hxensmean
 
     # save data.
     if savedata is not None and ntime >= ntime_savestart:
@@ -498,68 +502,151 @@ for ntime in range(nassim):
      ke_errav,ke_sprdav,masstend_diag,totmass))
 
     uensmean_b = uens.mean(axis=0); vensmean_b = vens.mean(axis=0)
-    vrtspec_ensmean_b, divspec_ensmean_b = model.ft.getvrtdivspec(uensmean_b,vensmean_b)
     upert_b = uens-uensmean_b; vpert_b=vens-vensmean_b
     dzensmean_b = dzens.mean(axis=0); dzpert_b = dzens-dzensmean_b
-    xprime_b = enstoctl(model,upert_b,vpert_b,dzpert_b,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv2)
+
+    if neig > 1:
+        upert_bm = modens(upert_b,sqrtcovlocal)
+        vpert_bm = modens(vpert_b,sqrtcovlocal)
+        dzpert_bm = modens(dzpert_b,sqrtcovlocal)
+    else:
+        upert_bm=upert_b; vpert_bm=vpert_b; dzpert_bm=dzpert_b
+    hxprime_bm = gethofx(upert_bm,vpert_bm,-dzpert_bm.sum(axis=1),-dzpert_bm[:,1,...],indxob,nanals2,nobs)
+    #hxprime_bm = gethofx(uensmean_b+upert_bm,vensmean_b+vpert_bm,ztop-(dzensmean_b+dzpert_bm).sum(axis=1),ztop-(dzensmean_b+dzpert_bm)[:,1,...],indxob,nanals2,nobs)-hxensmean
+
+    xensmean_b = enstoctl_mean(uensmean_b,vensmean_b,dzensmean_b)
+    xprime_b,xprime_bm = enstoctl(upert_b,vpert_b,dzpert_b,sqrtcovlocal)
 
     if not debug_model: 
-        # update state vector using letkf weights
-        xensmean_inc = np.zeros(xprime_b.shape[1:],xprime_b.dtype)
+        xensmean_a = xensmean_b.copy()
         xprime_a = xprime_b.copy()
-        if update_unbal:
-            kmax = xprime_b.shape[1] # update everything
-        else:
-            kmax = 4 # only update balanced u,v
-        for k in range(kmax): # only update balanced u,v
-            for n in range(model.ft.Nt**2):
-                xensmean_inc[k, n] = (wtsmean[n]*xprime_b[:, k, n]).sum()
-                xprime_a[:, k, n] = np.dot(wts[n].T, xprime_b[:, k, n])
+
+        # getkf global solution with model-space localization
+        # HZ^T = hxens * R**-1/2
+        # compute eigenvectors/eigenvalues of HZ^T HZ (C=left SV)
+        # (in Bishop paper HZ is nobs, nanals, here is it nanals, nobs)
+        # normalize so dot product is covariance
+        normfact = np.array(np.sqrt(nanals-1),dtype=np.float32)
+        hxtmp = (hxprime_bm/oberrstd[np.newaxis,:])/normfact
+        pa = np.dot(hxtmp,hxtmp.T)
+        evals, evecs = eigh(pa, driver='evd')
+        gamma_inv = np.zeros_like(evals)
+        #evals = np.where(evals > np.finfo(evals.dtype).eps, evals, 0.)
+        #gamma_inv = np.where(evals > np.finfo(evals.dtype).eps, 1./evals, 0.)
+        for n in range(nanals2):
+            if evals[n] > np.finfo(evals.dtype).eps:
+               gamma_inv[n] = 1./evals[n]
+            else:
+               evals[n] = 0. 
+        # gammapI used in calculation of posterior cov in ensemble space
+        gammapI = evals+1.
+        # create HZ^T R**-1/2 
+        shxtmp = hxtmp/oberrstd[np.newaxis,:]
+        # compute factor to multiply with model space ensemble perturbations
+        # to compute analysis increment (for mean update), save in single precision.
+        # This is the factor C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 (y - HXmean)
+        # in Bishop paper (eqs 10-12).
+        # pa = C (Gamma + I)**-1 C^T (analysis error cov in ensemble space)
+        #    = matmul(evecs/gammapI,transpose(evecs))
+        pa = np.dot(evecs/gammapI[np.newaxis,:],evecs.T)
+        # wts_ensmean = C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 (y - HXmean)
+        # (nanals, nanals) x (nanals,) = (nanals,)
+        # do nanal=1,nanals
+        #    swork1(nanal) = sum(shxtmp(nanal,:)*dep(:))
+        # end do
+        # do nanal=1,nanals
+        #    wts_ensmean(nanal) = sum(pa(nanal,:)*swork1(:))/normfact
+        # end do
+        dep = obs-hxensmean
+        wts_ensmean = np.dot(pa, np.dot(shxtmp,dep))/normfact
+        #print(wts_ensmean.min(), wts_ensmean.max(), wts_ensmean.shape)
+        #wts_ensmean = np.empty(nanals2,np.float32)
+        #swork1 = np.empty(nanals2,np.float32)
+        #for n in range(nanals2):
+        #    swork1[n] = (shxtmp[n,:]*dep).sum()
+        #print(swork1.min(), swork1.min(), swork1.shape)
+        #for n in range(nanals2):
+        #    wts_ensmean[n] = (pa[n,:]*swork1).sum()/normfact
+        #print(wts_ensmean.min(), wts_ensmean.max(), wts_ensmean.shape)
+        #raise SystemExit
+        # compute factor to multiply with model space ensemble perturbations
+        # to compute analysis increment (for perturbation update), save in single precision.
+        # This is -C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T (HZ)^T R**-1/2 HXprime
+        # in Bishop paper (eqn 29).
+        # For DEnKF factor is -0.5*C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 HXprime
+        # = -0.5 Pa (HZ)^ T R**-1/2 HXprime (Pa already computed)
+        # pa = C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T
+        # gammapI = sqrt(1.0/gammapI)
+        # do nanal=1,nanals
+        #    swork3(nanal,:) = &
+        #    evecs(nanal,:)*(1.-gammapI(:))*gamma_inv(:)
+        # enddo
+        # pa = matmul(swork3,transpose(swork2))
+        pa = np.dot(evecs*(1.-np.sqrt(1./gammapI[np.newaxis,:]))*gamma_inv[np.newaxis,:],evecs.T)
+        #pa=0.5*pa # for denkf
+        # wts_ensperts = -C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T (HZ)^T R**-1/2 HXprime
+        # (nanals, nanals) x (nanals, nanals/eigv) = (nanals, nanals/neigv)
+        # if denkf, wts_ensperts = -0.5 C (Gamma + I)**-1 C^T (HZ)^T R**-1/2 HXprime
+        # swork2 = matmul(shxtmp,transpose(hxens_orig))
+        #wts_ensperts = -matmul(pa, swork2)/normfact
+        wts_ensperts = -np.dot(pa, np.dot(shxtmp,hxprime_b.T)).T/normfact
+        #paens = pa/normfact**2 # posterior covariance in modulated ensemble space
+        for k in range(xprime_b.shape[1]):
+            # increments constructed from weighted modulated ensemble member prior perts.
+            # ensmean_chunk(npt,i,nb) = ensmean_chunk(npt,i,nb) + &
+            # sum(wts_ensmean*ens_tmp(:,i,nb))
+            xensmean_inc = np.dot(wts_ensmean,xprime_bm[:,k,:])
+            #xensmean_inc = (wts_ensmean[:,np.newaxis]*xprime_bm[:,k,:]).sum(axis=0)
+            #print(k,xensmean_inc.min(),xensmean_inc.max())
+            xensmean_a[k, :] = xensmean_b[k, :] + xensmean_inc
+            xprime_a[:,k,:] = xprime_b[:,k,:] + np.dot(wts_ensperts,xprime_bm[:,k,:])
+
+        xprime_a = xprime_a - xprime_a.mean(axis=0)
+        xprime_a = inflation(xprime_a,xprime_b,covinflate)
         t2 = time.time()
         if profile: print('cpu time for EnKF update',t2-t1)
-        if inflate_before: xprime_a = inflation(xprime_a,xprime_b,covinflate)
+        xens = xprime_a + xensmean_a 
 
+    # back to 3d state vector
+    uens,vens,dzens = ctltoens(xens)
+    if nobs==1: # single ob, set read_restart=True
+    #if 1:
+        uensmean_a = uens.mean(axis=0)
+        vensmean_a = vens.mean(axis=0)
+        dzensmean_a = dzens.mean(axis=0)
+        zsensmean_b = dzensmean_b.sum(axis=0)
+        zsensmean_a = dzensmean_a.sum(axis=0)
+        import matplotlib
+        matplotlib.use('agg')
+        import matplotlib.pyplot as plt
+        dzplot = (dzensmean_a - dzensmean_b)[1]
+        zsplot = zsensmean_a-zsensmean_b
+        uplot = (uensmean_a - uensmean_b)[1]
+        vplot = (vensmean_a - vensmean_b)[1]
+        print('uplot',uplot.min(), uplot.max())
+        print('vplot',vplot.min(), vplot.max())
+        print('dzplot',dzplot.min(), dzplot.max())
+        plt.figure()
+        vmin = -25; vmax = 25
+        plt.imshow(vplot,cmap=plt.cm.bwr,vmin=vmin,vmax=vmax,interpolation="nearest")
+        plt.colorbar()
+        plt.title('v increment')
+        plt.savefig('vinc.png')
+        plt.figure()
+        vmin = -25; vmax = 25
+        plt.imshow(uplot,cmap=plt.cm.bwr,vmin=vmin,vmax=vmax,interpolation="nearest")
+        plt.colorbar()
+        plt.title('u increment')
+        plt.savefig('uinc.png')
+        plt.figure()
+        vmin = -2500; vmax = 2500
+        plt.imshow(dzplot,cmap=plt.cm.bwr,vmin=vmin,vmax=vmax,interpolation="nearest")
+        plt.colorbar()
+        plt.title('h increment')
+        plt.savefig('hinc.png')
+        raise SystemExit
 
-    uensmean_balinc = np.empty_like(uensmean_b); vensmean_balinc = np.empty_like(vensmean_b)
-    uensmean_unbalinc = np.empty_like(uensmean_b); vensmean_unbalinc = np.empty_like(vensmean_b)
-    dzensmean_unbalinc = np.empty_like(uensmean_b)
-    uensmean_balinc[:] = xensmean_inc[0:2,:].reshape(2,model.ft.Nt,model.ft.Nt)
-    vensmean_balinc[:] = xensmean_inc[2:4,:].reshape(2,model.ft.Nt,model.ft.Nt)
-    # get balanced ens mean increments from rotational wind increments
-    uensmean_balinc,vensmean_balinc,dzensmean_balinc = \
-    balpert(N,L,dt,uensmean_balinc,vensmean_balinc,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv2)
-    uensmean_unbalinc[:] = xensmean_inc[4:6,:].reshape(2,model.ft.Nt,model.ft.Nt)
-    vensmean_unbalinc[:] = xensmean_inc[6:8,:].reshape(2,model.ft.Nt,model.ft.Nt)
-    dzensmean_unbalinc[:] = xensmean_inc[8:10,:].reshape(2,model.ft.Nt,model.ft.Nt)
-    # get total pertubation increments from unbalanced/balanced increments
-    # reconstruct total analysis fields
-    upertinc,vpertinc,dzpertinc = ctltoens(model,xprime_a-xprime_b,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv2)
-    if not inflate_before: 
-        upert = upert_b + upertinc 
-        vpert = vpert_b + vpertinc 
-        dzpert = dzpert_b + dzpertinc 
-        xens = np.empty((nanals,6,Nt**2),dtype)
-        xens[:,0:2,:] = upert[:].reshape(nanals,2,model.ft.Nt**2)
-        xens[:,2:4,:] = vpert[:].reshape(nanals,2,model.ft.Nt**2)
-        xens[:,4:6,:] = dzpert[:].reshape(nanals,2,model.ft.Nt**2)
-        xens_b = np.empty((nanals,6,Nt**2),dtype)
-        xens_b[:,0:2,:] = upert_b[:].reshape(nanals,2,model.ft.Nt**2)
-        xens_b[:,2:4,:] = vpert_b[:].reshape(nanals,2,model.ft.Nt**2)
-        xens_b[:,4:6,:] = dzpert_b[:].reshape(nanals,2,model.ft.Nt**2)
-        xprime_a = inflation(xens,xens_b,covinflate)
-        upert[:] = xprime_a[:,0:2,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-        vpert[:] = xprime_a[:,2:4,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-        dzpert[:] = xprime_a[:,4:6,:].reshape(nanals,2,model.ft.Nt,model.ft.Nt)
-        upertinc = upert - upert_b
-        vpertinc = vpert - vpert_b
-        dzpertinc = dzpert - dzpert_b
-    uens = upert_b + uensmean_b + upertinc + uensmean_balinc + uensmean_unbalinc
-    vens = vpert_b + vensmean_b + vpertinc + vensmean_balinc + vensmean_unbalinc
-    dzens = dzpert_b + dzensmean_b + dzpertinc + dzensmean_balinc + dzensmean_unbalinc
-
-    # make sure there is no negative layer thickness in analysis
     np.clip(dzens,a_min=dzmin,a_max=model.ztop-dzmin, out=dzens)
-
     if fix_totmass:
         for nmem in range(nanals):
             dzens[nmem][0] = dzens[nmem][0] - dzens[nmem][0].mean() + model.zmid
