@@ -45,7 +45,7 @@ filename_truth = 'twolayerpe_N128_6hrly_symjet_nskip2.nc' # file name for foreca
 linbal = False # use linear (geostrophic) balance instead of nonlinear (gradient) balance.
 dzmin = 10. # min layer thickness allowed
 inflate_before=True # inflate before balance operator applied
-baldiv = False # include balanced divergence
+baldiv = True # include balanced divergence
 update_unbal = True # update unbalanced part
 tmax = 1.*86400. # time to run forced linear model to get balanced flow
 
@@ -160,9 +160,9 @@ dz_truth = nc_truth.variables['dz']
 # set up arrays for obs and localization function
 print('# random network nobs = %s' % nobs)
 oberrvar = np.ones(6*nobs,dtype)
-oberrvar[0:4*nobs] = oberrstdev_wind*oberrvar[0:4*nobs]
-oberrvar[4*nobs:5*nobs] = oberrstdev_zsfc*oberrvar[4*nobs:5*nobs]
-oberrvar[5*nobs:] = oberrstdev_zmid*oberrvar[5*nobs:]
+oberrvar[0:4*nobs] = oberrstdev_wind**2*oberrvar[0:4*nobs]
+oberrvar[4*nobs:5*nobs] = oberrstdev_zsfc**2*oberrvar[4*nobs:5*nobs]
+oberrvar[5*nobs:] = oberrstdev_zmid**2*oberrvar[5*nobs:]
 
 obs = np.empty(6*nobs,dtype)
 covlocal1 = np.empty(Nt**2,dtype)
