@@ -1,4 +1,5 @@
 import numpy as np
+#import time
 from scipy.linalg import eigh
 from joblib import Parallel, delayed
 
@@ -36,6 +37,22 @@ def gaspcohn(r):
     )
     return taper
 
+def modens(enspert,sqrtcovlocal):
+    nanals = enspert.shape[0]
+    neig = sqrtcovlocal.shape[0]
+    #nlevs = enspert.shape[1]
+    #Nt = enspert.shape[2]
+    #enspertm = np.empty((nanals*neig,nlevs,Nt,Nt),enspert.dtype)
+    #for k in range(nlevs):
+    #   nanal2 = 0
+    #   for j in range(neig):
+    #       for nanal in range(nanals):
+    #           enspertm[nanal2,k,...] = enspert[nanal,k,...]*sqrtcovlocal[j,...]
+    #           nanal2+=1
+    enspertm = np.multiply(np.repeat(sqrtcovlocal[:,np.newaxis,:,:],nanals,axis=0),np.tile(enspert,(neig,1,1,1)))
+    #print(sqrtcovlocal.min(), sqrtcovlocal.max(),(enspertm-enspertm2).min(), (enspertm-enspertm2).max())
+    return enspertm
+
 def letkf_kernel(xens,hxens,obs,oberrs,covlocal,nlevs_update=None):
     nanals, nlevs = xens.shape
     if nlevs_update is not None:
@@ -49,7 +66,7 @@ def letkf_kernel(xens,hxens,obs,oberrs,covlocal,nlevs_update=None):
     def calcwts(hx, Rinv, ominusf):
         YbRinv = np.dot(hx, Rinv)
         pa = (nanals - 1) * np.eye(nanals) + np.dot(YbRinv, hx.T)
-        evals, eigs = eigh(pa)
+        evals, eigs = eigh(pa,driver='evd')
         painv = np.dot(np.dot(eigs, np.diag(np.sqrt(1.0 / evals))), eigs.T)
         tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
         return np.sqrt(nanals - 1) * painv + tmp[:, np.newaxis]
@@ -82,7 +99,7 @@ def letkfwts_kernel(hxens,obs,oberrs,covlocal):
     def calcwts(hx, Rinv, ominusf):
         YbRinv = np.dot(hx, Rinv)
         pa = (nanals - 1) * np.eye(nanals) + np.dot(YbRinv, hx.T)
-        evals, eigs = eigh(pa)
+        evals, eigs = eigh(pa,driver='evd')
         painv = np.dot(np.dot(eigs, np.diag(np.sqrt(1.0 / evals))), eigs.T)
         tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
         return np.sqrt(nanals - 1) * painv + tmp[:, np.newaxis]
@@ -100,7 +117,7 @@ def letkfwts_kernel2(hxens,obs,oberrs,covlocal):
     def calcwts(hx, Rinv, ominusf):
         YbRinv = np.dot(hx, Rinv)
         pa = (nanals - 1) * np.eye(nanals) + np.dot(YbRinv, hx.T)
-        evals, eigs = eigh(pa)
+        evals, eigs = eigh(pa,driver='evd')
         painv = np.dot(np.dot(eigs, np.diag(np.sqrt(1.0 / evals))), eigs.T)
         tmp = np.dot(np.dot(np.dot(painv, painv.T), YbRinv), ominusf)
         return np.sqrt(nanals - 1) * painv, tmp
@@ -178,3 +195,79 @@ def serial_update(xens, hxens, obs, oberrs, covlocal, obcovlocal):
             hxprime[:, mask] - gainfact * kfgain * hxens
         )
     return xmean + xprime
+
+def getkf(xprime_bm,hxprime_b,hxprime_bm,oberrvar,dep,denkf=False):
+    oberrstd = np.sqrt(oberrvar[np.newaxis,:])
+    nanals = hxprime_b.shape[0] # 'original' ensemble size
+    nanals2 = xprime_bm.shape[0] # modulated ensemble size
+    xensmean_inc=np.empty(xprime_bm.shape[1:],np.float32)
+    xprime_inc=np.empty((nanals,)+xprime_bm.shape[1:],np.float32)
+    # getkf global solution with model-space localization
+    # HZ^T = hxens * R**-1/2
+    # compute eigenvectors/eigenvalues of HZ^T HZ (C=left SV)
+    # (in Bishop paper HZ is nobs, nanals, here is it nanals, nobs)
+    # normalize so dot product is covariance
+    normfact = np.array(np.sqrt(nanals-1),dtype=np.float32)
+    hxtmp = (hxprime_bm/oberrstd)/normfact
+    pa = np.dot(hxtmp,hxtmp.T)
+    #t1 = time.time()
+    evals, evecs = eigh(pa, driver='evd')
+    #t2 = time.time()
+    #print('time in eigh',t2-t1)
+    gamma_inv = np.zeros_like(evals)
+    #evals = np.where(evals > np.finfo(evals.dtype).eps, evals, 0.)
+    #gamma_inv = np.where(evals > np.finfo(evals.dtype).eps, 1./evals, 0.)
+    for n in range(nanals2):
+        if evals[n] > np.finfo(evals.dtype).eps:
+           gamma_inv[n] = 1./evals[n]
+        else:
+           evals[n] = 0. 
+    # gammapI used in calculation of posterior cov in ensemble space
+    gammapI = evals+1.
+    # create HZ^T R**-1/2 
+    shxtmp = hxtmp/oberrstd
+    # compute factor to multiply with model space ensemble perturbations
+    # to compute analysis increment (for mean update), save in single precision.
+    # This is the factor C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 (y - HXmean)
+    # in Bishop paper (eqs 10-12).
+    # pa = C (Gamma + I)**-1 C^T (analysis error cov in ensemble space)
+    #    = matmul(evecs/gammapI,transpose(evecs))
+    pa = np.dot(evecs/gammapI[np.newaxis,:],evecs.T)
+    # wts_ensmean = C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 (y - HXmean)
+    # (nanals, nanals) x (nanals,) = (nanals,)
+    # do nanal=1,nanals
+    #    swork1(nanal) = sum(shxtmp(nanal,:)*dep(:))
+    # end do
+    # do nanal=1,nanals
+    #    wts_ensmean(nanal) = sum(pa(nanal,:)*swork1(:))/normfact
+    # end do
+    wts_ensmean = np.dot(pa, np.dot(shxtmp,dep))/normfact
+    # compute factor to multiply with model space ensemble perturbations
+    # to compute analysis increment (for perturbation update), save in single precision.
+    # This is -C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T (HZ)^T R**-1/2 HXprime
+    # in Bishop paper (eqn 29).
+    # For DEnKF factor is -0.5*C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 HXprime
+    # = -0.5 Pa (HZ)^ T R**-1/2 HXprime (Pa already computed)
+    # pa = C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T
+    # gammapI = sqrt(1.0/gammapI)
+    # do nanal=1,nanals
+    #    swork3(nanal,:) = &
+    #    evecs(nanal,:)*(1.-gammapI(:))*gamma_inv(:)
+    # enddo
+    # pa = matmul(swork3,transpose(swork2))
+    if denkf:
+        pa=0.5*pa # for denkf
+    else:
+        pa=np.dot(evecs*(1.-np.sqrt(1./gammapI[np.newaxis,:]))*gamma_inv[np.newaxis,:],evecs.T)
+    # wts_ensperts = -C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T (HZ)^T R**-1/2 HXprime
+    # (nanals, nanals) x (nanals, nanals/eigv) = (nanals, nanals/neigv)
+    # if denkf, wts_ensperts = -0.5 C (Gamma + I)**-1 C^T (HZ)^T R**-1/2 HXprime
+    # swork2 = matmul(shxtmp,transpose(hxens_orig))
+    #wts_ensperts = -matmul(pa, swork2)/normfact
+    wts_ensperts = -np.dot(pa, np.dot(shxtmp,hxprime_b.T)).T/normfact
+    #paens = pa/normfact**2 # posterior covariance in modulated ensemble space
+    for k in range(xprime_bm.shape[1]):
+        # increments constructed from weighted modulated ensemble member prior perts.
+        xensmean_inc[k,:] = np.dot(wts_ensmean,xprime_bm[:,k,:])
+        xprime_inc[:,k,:] = np.dot(wts_ensperts,xprime_bm[:,k,:])
+    return xensmean_inc,xprime_inc

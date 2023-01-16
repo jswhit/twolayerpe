@@ -3,25 +3,9 @@ from netCDF4 import Dataset
 import sys, time, os
 from twolayer_bal import TwoLayer, run_model
 from pyfft import Fouriert
-from enkf_utils import cartdist,gaspcohn
+from enkf_utils import cartdist,gaspcohn,getkf,modens
 from scipy.linalg import eigh, svd
 from joblib import Parallel, delayed
-
-def modens(enspert,sqrtcovlocal):
-    nanals = enspert.shape[0]
-    neig = sqrtcovlocal.shape[0]
-    #nlevs = enspert.shape[1]
-    #Nt = enspert.shape[2]
-    #enspertm = np.empty((nanals*neig,nlevs,Nt,Nt),enspert.dtype)
-    #for k in range(nlevs):
-    #   nanal2 = 0
-    #   for j in range(neig):
-    #       for nanal in range(nanals):
-    #           enspertm[nanal2,k,...] = enspert[nanal,k,...]*sqrtcovlocal[j,...]
-    #           nanal2+=1
-    enspertm = np.multiply(np.repeat(sqrtcovlocal[:,np.newaxis,:,:],nanals,axis=0),np.tile(enspert,(neig,1,1,1)))
-    #print(sqrtcovlocal.min(), sqrtcovlocal.max(),(enspertm-enspertm2).min(), (enspertm-enspertm2).max())
-    return enspertm
 
 # LETKF cycling for two-layer pe turbulence model with interface height obs.
 # horizontal localization (no vertical).
@@ -602,73 +586,10 @@ for ntime in range(nassim):
     #xprime_bm = enstoctl(model,upert_bm,vpert_bm,dzpert_bm,vrtspec_ensmean_b,divspec_ensmean_b,dzensmean_b,linbal=linbal,baldiv=baldiv2)
 
     if not debug_model: 
-        xensmean_inc = np.zeros(xprime_b.shape[1:],xprime_b.dtype)
-        xprime_a = xprime_b.copy()
 
-        # getkf global solution with model-space localization
-        # HZ^T = hxens * R**-1/2
-        # compute eigenvectors/eigenvalues of HZ^T HZ (left SV)
-        # (in Bishop paper HZ is nobs, nanals, here is it nanals, nobs)
-        # normalize so dot product is covariance
-        normfact = np.array(np.sqrt(nanals-1),dtype=np.float32)
-        hxens = (hxprime_bm/oberrstd[np.newaxis,:])/normfact
-        pa = np.dot(hxens,hxens.T)
-        evals, evecs = eigh(pa, driver='evd')
-        gamma_inv = np.zeros_like(evals)
-        #evals = np.where(evals > np.finfo(evals.dtype).eps, evals, 0.)
-        #gamma_inv = np.where(evals > np.finfo(evals.dtype).eps, 1./evals, 0.)
-        for n in range(nanals2):
-            if evals[n] > np.finfo(evals.dtype).eps:
-               gamma_inv[n] = 1./evals[n]
-            else:
-               evals[n] = 0. 
-        # gammapI used in calculation of posterior cov in ensemble space
-        gammapI = evals+1.
-        # create HZ^T R**-1/2 
-        shxens = hxens/oberrstd[np.newaxis,:]
-        # compute factor to multiply with model space ensemble perturbations
-        # to compute analysis increment (for mean update), save in single precision.
-        # This is the factor C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 (y - HXmean)
-        # in Bishop paper (eqs 10-12).
-        # pa = C (Gamma + I)**-1 C^T (analysis error cov in ensemble space)
-        #    = matmul(evecs/gammapI,transpose(evecs))
-        pa = np.dot(evecs/gammapI[np.newaxis,:],evecs.T)
-        # wts_ensmean = C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 (y - HXmean)
-        # (nanals, nanals) x (nanals,) = (nanals,)
-        # do nanal=1,nanals
-        #    swork1(nanal) = sum(shxens(nanal,:)*dep(:))
-        # end do
-        # do nanal=1,nanals
-        #    wts_ensmean(nanal) = sum(pa(nanal,:)*swork1(:))/normfact
-        # end do
-        wts_ensmean = np.dot(pa, np.dot(shxens,obs-hxensmean))/normfact
-        # compute factor to multiply with model space ensemble perturbations
-        # to compute analysis increment (for perturbation update), save in single precision.
-        # This is -C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T (HZ)^T R**-1/2 HXprime
-        # in Bishop paper (eqn 29).
-        # For DEnKF factor is -0.5*C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 HXprime
-        # = -0.5 Pa (HZ)^ T R**-1/2 HXprime (Pa already computed)
-        # pa = C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T
-        # gammapI = sqrt(1.0/gammapI)
-        # do nanal=1,nanals
-        #    swork3(nanal,:) = &
-        #    evecs(nanal,:)*(1.-gammapI(:))*gamma_inv(:)
-        # enddo
-        # pa = matmul(swork3,transpose(swork2))
-        pa = np.dot(evecs*(1.-np.sqrt(1./gammapI[np.newaxis,:]))*gamma_inv[np.newaxis,:],evecs.T)
-        #pa=0.5*pa for denkf
-        # wts_ensperts = -C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T (HZ)^T R**-1/2 HXprime
-        # (nanals, nanals) x (nanals, nanals/eigv) = (nanals, nanals/neigv)
-        # if denkf, wts_ensperts = -0.5 C (Gamma + I)**-1 C^T (HZ)^T R**-1/2 HXprime
-        # swork2 = matmul(shxens,transpose(hxens_orig))
-        #wts_ensperts = -matmul(pa, swork2)/normfact
-        wts_ensperts = -np.dot(pa, np.dot(shxens,hxprime_b.T)).T/normfact
-        #paens = pa/normfact**2 # posterior covariance in modulated ensemble space
-        for k in range(xprime_b.shape[1]):
-            # increments constructed from weighted modulated ensemble member prior perts.
-            xensmean_inc[k, :] = np.dot(wts_ensmean,xprime_bm[:,k,:])
-            #print(k,xensmean_inc[k,:].min(),xensmean_inc[k,:].max())
-            xprime_a[:,k,:] = xprime_b[:,k,:] + np.dot(wts_ensperts,xprime_bm[:,k,:])
+        dep = obs-hxensmean
+        xensmean_inc, xprime_inc = getkf(xprime_bm,hxprime_b,hxprime_bm,oberrvar,dep)
+        xprime_a = xprime_b + xprime_inc
         xprime_a = xprime_a - xprime_a.mean(axis=0)
 
         t2 = time.time()
