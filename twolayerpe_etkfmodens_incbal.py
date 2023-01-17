@@ -30,7 +30,7 @@ covinflate = float(sys.argv[2])
 # other parameters.
 #div2_diff_efold=1800.
 div2_diff_efold=1.e30
-fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
+fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
 posterior_stats = False
 nassim = 1600 # assimilation times to run
 #nassim = 10
@@ -90,10 +90,10 @@ diff_efold=nc_climo.diff_efold
 diff_order=nc_climo.diff_order
 
 oberrstdev_zmid = 100. # interface height ob error in meters
-oberrstdev_zsfc = ((theta2-theta1)/theta1)*100.  # surface height ob error in meters
-oberrstdev_wind = 1.   # wind ob error in meters per second
-#oberrstdev_zsfc = np.sqrt(1.e30) # surface height ob error in meters
-#oberrstdev_wind = np.sqrt(1.e30) # don't assimilate winds
+#oberrstdev_zsfc = ((theta2-theta1)/theta1)*100.  # surface height ob error in meters
+#oberrstdev_wind = 1.   # wind ob error in meters per second
+oberrstdev_zsfc = np.sqrt(1.e30) # surface height ob error in meters
+oberrstdev_wind = np.sqrt(1.e30) # don't assimilate winds
 
 ft = Fouriert(N,L,threads=threads,precision=precision) # create Fourier transform object
 
@@ -588,7 +588,13 @@ for ntime in range(nassim):
     if not debug_model: 
 
         dep = obs-hxensmean
-        xensmean_inc, xprime_inc = getkf(xprime_bm,hxprime_b,hxprime_bm,oberrvar,dep)
+        wts_ensmean,wts_ensperts = getkf(hxprime_b,hxprime_bm,oberrvar,dep)
+        xensmean_inc = np.zeros(xprime_b.shape[1:],xprime_b.dtype)
+        xprime_inc = np.zeros_like(xprime_b)
+        for k in range(xprime_bm.shape[1]):
+            # increments constructed from weighted modulated ensemble member prior perts.
+            xensmean_inc[k,:] = np.dot(wts_ensmean,xprime_bm[:,k,:])
+            xprime_inc[:,k,:] = np.dot(wts_ensperts,xprime_bm[:,k,:])
         xprime_a = xprime_b + xprime_inc
         xprime_a = xprime_a - xprime_a.mean(axis=0)
 

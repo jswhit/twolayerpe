@@ -196,12 +196,10 @@ def serial_update(xens, hxens, obs, oberrs, covlocal, obcovlocal):
         )
     return xmean + xprime
 
-def getkf(xprime_bm,hxprime_b,hxprime_bm,oberrvar,dep,denkf=False):
+def getkf(hxprime_b,hxprime_bm,oberrvar,dep,denkf=False):
     oberrstd = np.sqrt(oberrvar[np.newaxis,:])
     nanals = hxprime_b.shape[0] # 'original' ensemble size
-    nanals2 = xprime_bm.shape[0] # modulated ensemble size
-    xensmean_inc=np.empty(xprime_bm.shape[1:],np.float32)
-    xprime_inc=np.empty((nanals,)+xprime_bm.shape[1:],np.float32)
+    nanals2 = hxprime_bm.shape[0] # modulated ensemble size
     # getkf global solution with model-space localization
     # HZ^T = hxens * R**-1/2
     # compute eigenvectors/eigenvalues of HZ^T HZ (C=left SV)
@@ -266,8 +264,4 @@ def getkf(xprime_bm,hxprime_b,hxprime_bm,oberrvar,dep,denkf=False):
     #wts_ensperts = -matmul(pa, swork2)/normfact
     wts_ensperts = -np.dot(pa, np.dot(shxtmp,hxprime_b.T)).T/normfact
     #paens = pa/normfact**2 # posterior covariance in modulated ensemble space
-    for k in range(xprime_bm.shape[1]):
-        # increments constructed from weighted modulated ensemble member prior perts.
-        xensmean_inc[k,:] = np.dot(wts_ensmean,xprime_bm[:,k,:])
-        xprime_inc[:,k,:] = np.dot(wts_ensperts,xprime_bm[:,k,:])
-    return xensmean_inc,xprime_inc
+    return wts_ensmean,wts_ensperts

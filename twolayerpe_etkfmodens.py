@@ -29,7 +29,7 @@ covinflate = float(sys.argv[2])
 # other parameters.
 #div2_diff_efold=1800.
 div2_diff_efold=1.e30
-fix_totmass = False # if True, use a mass fixer to fix mass in each layer (area mean dz)
+fix_totmass = True # if True, use a mass fixer to fix mass in each layer (area mean dz)
 posterior_stats = False
 nassim = 1600 # assimilation times to run
 #nassim = 10
@@ -504,11 +504,15 @@ for ntime in range(nassim):
     if not debug_model: 
         dep = obs-hxensmean
         t1 = time.time()
-        xensmean_inc, xprime_inc = getkf(xprime_bm,hxprime_b,hxprime_bm,oberrvar,dep)
+        wts_ensmean,wts_ensperts = getkf(hxprime_b,hxprime_bm,oberrvar,dep)
+        xensmean_a = np.empty_like(xensmean_b)
+        xprime_a = np.empty_like(xprime_b)
+        for k in range(xprime_bm.shape[1]):
+            # increments constructed from weighted modulated ensemble member prior perts.
+            xensmean_a[k,:] = xensmean_b[k,:] + np.dot(wts_ensmean,xprime_bm[:,k,:])
+            xprime_a[:,k,:] = xprime_b[:,k,:] + np.dot(wts_ensperts,xprime_bm[:,k,:])
         t2 = time.time()
         if profile: print('time in getkf',t2-t1)
-        xensmean_a = xensmean_b + xensmean_inc
-        xprime_a = xprime_b + xprime_inc
         xprime_a = xprime_a - xprime_a.mean(axis=0)
         xprime_a = inflation(xprime_a,xprime_b,covinflate)
         t2 = time.time()
