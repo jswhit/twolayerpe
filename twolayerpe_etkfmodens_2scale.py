@@ -22,9 +22,10 @@ python twolayerpe_letkf.py hcovlocal_scale covinflate
    raise SystemExit(msg)
 
 # horizontal covariance localization length scale in meters.
-hcovlocal_scale = 1.e3*float(sys.argv[1])
+hcovlocal_scale1 = 1.e3*float(sys.argv[1])
+hcovlocal_scale2 = 1.e3*float(sys.argv[2])
 # RTPS inflation coeff
-covinflate = float(sys.argv[2])
+covinflate = float(sys.argv[3])
 
 # other parameters.
 div2_diff_efold=1800.
@@ -113,8 +114,8 @@ if not read_restart:
     dz_climo = nc_climo.variables['dz']
     indxran = rsics.choice(u_climo.shape[0],size=nanals,replace=False)
 else:
-    if len(sys.argv) > 3:
-        nt = int(sys.argv[3])
+    if len(sys.argv) > 4:
+        nt = int(sys.argv[4])
     else:
         nt = -1
     ncinit = Dataset('%s.nc' % exptname, mode='r', format='NETCDF4_CLASSIC')
@@ -141,8 +142,8 @@ if not read_restart:
 else:
     ncinit.close()
 
-print("# hcovlocal=%g covinf=%s nanals=%s" %\
-         (hcovlocal_scale/1000.,covinflate,nanals))
+print("# hcovlocal1=%g hcovlocal2=%g covinf=%s nanals=%s" %\
+         (hcovlocal_scale1/1000.,hcovlocal_scale2/1000.,covinflate,nanals))
 
 # each ob time nobs ob locations are randomly sampled (without
 # replacement) from the model grid
@@ -366,26 +367,70 @@ noloc = False
 Ntsq = Nt**2
 if noloc:
     neig = 1
-    sqrtcovlocal = np.ones((neig,Ntsq),np.float32)
+    sqrtcovlocal = np.ones((neig,2*Ntsq),np.float32)
 else:    
-    covlocal = np.zeros((Ntsq,Ntsq),np.float32)
+    covlocal1 = np.zeros((Ntsq,Ntsq),np.float32)
+    covlocal2 = np.zeros((Ntsq,Ntsq),np.float32)
+    covlocal12 = np.zeros((Ntsq,Ntsq),np.float32)
     xx = model.x.reshape(Ntsq)
     yy = model.y.reshape(Ntsq)
+    thresh = 0.98
+    eps = np.finfo(covlocal1.dtype).eps
     for n in range(Ntsq):
         dist = cartdist(xx[n],yy[n],x,y,nc_climo.L,nc_climo.L)
-        covlocal[:,n] = (gaspcohn(dist/hcovlocal_scale)).reshape(Ntsq)
-    evals, evecs = eigh(covlocal,driver='evd')
-    neig = 1
+        covlocal1[:,n] = (gaspcohn(dist/hcovlocal_scale1)).reshape(Ntsq)
+        covlocal2[:,n] = (gaspcohn(dist/hcovlocal_scale2)).reshape(Ntsq)
+
+    evals1, evecs1 = eigh(covlocal1,driver='evd')
+    evals1 = np.where(evals1 > eps, evals1, eps)
+    evals2, evecs2 = eigh(covlocal2,driver='evd')
+    evals2 = np.where(evals2 > eps, evals2, eps)
+    neig1 = 1
     for nn in range(1,Ntsq):
+        percentvar = evals1[-nn:].sum()/evals1.sum()
+        if percentvar > thresh:
+            neig1 = nn
+            break
+    print('#neig1 = ',neig1,evals1.min(),evals1.max())
+    sqrtcovlocal1 = np.dot(evecs1*np.sqrt(evals1),evecs1.T)
+    covlocal1 = np.dot(sqrtcovlocal1, sqrtcovlocal1.T)
+    neig2 = 1
+    for nn in range(1,Ntsq):
+        percentvar = evals2[-nn:].sum()/evals2.sum()
+        if percentvar > thresh:
+            neig2 = nn
+            break
+    print('#neig2 = ',neig2,evals2.min(),evals2.max())
+    sqrtcovlocal2 = np.dot(evecs2*np.sqrt(evals2),evecs2.T)
+    covlocal2 = np.dot(sqrtcovlocal2, sqrtcovlocal2.T)
+
+    covlocal12 = np.dot(sqrtcovlocal1, sqrtcovlocal2.T) # cross-scale localization
+
+    covlocal=np.block([[covlocal1,covlocal12],[covlocal12.T,covlocal2]])
+    #covlocal=np.dot(np.vstack([sqrtcovlocal1,sqrtcovlocal2]),np.hstack([sqrtcovlocal1.T,sqrtcovlocal2.T]))
+    evals, evecs = eigh(covlocal,driver='evd')
+    evals = np.where(evals > eps, evals, eps)
+    neig = 1
+    for nn in range(1,2*Ntsq):
         percentvar = evals[-nn:].sum()/evals.sum()
-        if percentvar > 0.98:
+        if percentvar > thresh:
             neig = nn
             break
-    print('#neig = ',neig)
+    print('#neig = ',neig, evals.min(), evals.max())
+    #evals = np.where(evals > evals[-(neig+1)], evals/percentvar, eps)
+    #sqrtcovlocal = np.dot(evecs*np.sqrt(evals),evecs.T)
+    #covlocal = np.dot(sqrtcovlocal, sqrtcovlocal.T)
+    #import matplotlib
+    #matplotlib.use('agg')
+    #import matplotlib.pyplot as plt
+    #im=plt.imshow(covlocal,cmap=plt.cm.jet,interpolation="nearest")
+    #plt.colorbar()
+    #plt.savefig('test.png')
+    #t2 = time.time()
+    #if profile: print('time for sqrtcovlocal calc',t2-t1)
+    #raise SystemExit
     evecs_norm = (evecs*np.sqrt(evals/percentvar)).T
     sqrtcovlocal = evecs_norm[-neig:,:]
-    t2 = time.time()
-    if profile: print('time for sqrtcovlocal calc',t2-t1)
 nanals2 = neig*nanals
 
 masstend_diag = 0.

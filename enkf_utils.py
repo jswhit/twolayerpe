@@ -1,5 +1,5 @@
 import numpy as np
-#import time
+import time
 from scipy.linalg import eigh
 from joblib import Parallel, delayed
 
@@ -14,6 +14,11 @@ def cartdist(x1, y1, x2, y2, xmax, ymax):
     dy = np.where(dy > 0.5 * ymax, ymax - dy, dy)
     return np.sqrt(dx ** 2 + dy ** 2)
 
+def cartdist_1d(x1, x2, xmax):
+    """cartesian distance on 1d  periodic plane"""
+    dx = np.abs(x1 - x2)
+    dx = np.where(dx > 0.5 * xmax, xmax - dx, dx)
+    return np.sqrt(dx ** 2)
 
 def gaspcohn(r):
     """
@@ -37,6 +42,11 @@ def gaspcohn(r):
     )
     return taper
 
+def gaussian(r):
+    c = np.sqrt(0.15)
+    return np.exp(-(r/c)**2)
+
+
 def modens(enspert,sqrtcovlocal):
     nanals = enspert.shape[0]
     neig = sqrtcovlocal.shape[0]
@@ -52,6 +62,32 @@ def modens(enspert,sqrtcovlocal):
     enspertm = np.multiply(np.repeat(sqrtcovlocal[:,np.newaxis,:,:],nanals,axis=0),np.tile(enspert,(neig,1,1,1)))
     #print(sqrtcovlocal.min(), sqrtcovlocal.max(),(enspertm-enspertm2).min(), (enspertm-enspertm2).max())
     return enspertm
+
+def modensv(enspert,sqrtcovlocal):
+    nanals = enspert.shape[0]
+    neig = sqrtcovlocal.shape[0]
+    enspertm = np.multiply(np.repeat(sqrtcovlocal[:,np.newaxis,:],nanals,axis=0),np.tile(enspert,(neig,1,1)))
+    return enspertm
+
+def gethofxv(xens,indxob,nanals,nobs,ztop=0):
+    if nanals > 0:
+        hxens = np.empty((nanals,6*nobs),xens.dtype)
+        for nanal in range(nanals):
+            hxens[nanal,0:nobs] = xens[nanal,0,...].ravel()[indxob] # lower-layer u obs
+            hxens[nanal,nobs:2*nobs] = xens[nanal,2,...].ravel()[indxob] # lower-layer v obs
+            hxens[nanal,2*nobs:3*nobs] = xens[nanal,1,...].ravel()[indxob] # upper-layer u obs
+            hxens[nanal,3*nobs:4*nobs] = xens[nanal,3,...].ravel()[indxob] # upper-layer v obs
+            hxens[nanal,4*nobs:5*nobs] = (ztop-(xens[nanal,4,...]+xens[nanal,5,...])).ravel()[indxob] # surface height obs
+            hxens[nanal,5*nobs:] = (ztop-xens[nanal,5,...]).ravel()[indxob] # interface height obs
+    else:
+        hxens = np.empty(6*nobs,xens.dtype)
+        hxens[0:nobs] = xens[0,...].ravel()[indxob] # lower-layer u obs
+        hxens[nobs:2*nobs] = xens[2,...].ravel()[indxob] # lower-layer v obs
+        hxens[2*nobs:3*nobs] = xens[1,...].ravel()[indxob] # upper-layer u obs
+        hxens[3*nobs:4*nobs] = xens[3,...].ravel()[indxob] # upper-layer v obs
+        hxens[4*nobs:5*nobs] = (ztop-(xens[4,...]+xens[5,...])).ravel()[indxob] # surface height obs
+        hxens[5*nobs:] = (ztop-xens[5,...]).ravel()[indxob] # interface height obs
+    return hxens
 
 def letkf_kernel(xens,hxens,obs,oberrs,covlocal,nlevs_update=None):
     nanals, nlevs = xens.shape
@@ -265,3 +301,124 @@ def getkf(hxprime_b,hxprime_bm,oberrvar,dep,denkf=False):
     wts_ensperts = -np.dot(pa, np.dot(shxtmp,hxprime_b.T)).T/normfact
     #paens = pa/normfact**2 # posterior covariance in modulated ensemble space
     return wts_ensmean,wts_ensperts
+
+def lgetkf_update(xprime_b,dep,indxob,xob,yob,oberrvar,x,y,L,lscale,covlocal,n_jobs,denkf=False):
+    nanals,nlevs,Ntsq = xprime_b.shape
+    normfact = np.array(np.sqrt(nanals-1),dtype=np.float32)
+    nobs = dep.shape[0]
+    xx = x.reshape(Ntsq)
+    yy = y.reshape(Ntsq)
+    nobsxy = nobs//6 # u,v at each level, zsfc and zmid obs 
+    t1 = time.time()
+    for n in range(Ntsq):
+        distobs = cartdist(xx[n],yy[n],xob,yob,L,L)
+        distgrd = cartdist(xx[n],yy[n],x,y,L,L).reshape(Ntsq)
+        indxob_local = distobs < lscale
+        indxgrd_local= distgrd < lscale 
+        indxobxy_local = indxob[indxgrd_local]
+        npts_local = indxgrd_local.sum()
+        nobs_local = indxob_local.sum()
+        nobsxy_local = indxobxy_local.sum()
+        dep_local = dep[indxob_local]
+        oberrstd_local = np.sqrt(oberrvar[indxob_local])
+        xprime_blocal = xprime_b[:,:,indxgrd_local]
+        covlocal_local = covlocal[np.ix_(indxgrd_local,indxgrd_local)]
+        evals, evecs = eigh(covlocal_local,driver='evd')
+        neig = 1
+        for nn in range(1,npts_local):
+            percentvar = evals[-nn:].sum()/evals.sum()
+            if percentvar > 0.98:
+                neig = nn
+                break
+        print('n,neig = ',n,neig)
+        nanals2 = neig*nanals
+        evecs_norm = (evecs*np.sqrt(evals/percentvar)).T
+        sqrtcovlocal_local = evecs_norm[-neig:,:]
+        xprime_bmlocal = modensv(xprime_blocal,sqrtcovlocal_local)
+        #print(nobsxy_local,xprime_bmlocal.shape,indxobxy_local.shape)
+        hxprime_bmlocal = gethofxv(xprime_bmlocal,indxobxy_local,nanals2,nobsxy_local,ztop=0)
+        hxprime_b = gethofxv(xprime_blocal,indxobxy_local,nanals,nobsxy_local,ztop=0)
+        #print(nobs,nobsxy,nobs_local,xprime_bmlocal.shape,hxprime_bmlocal.shape)
+        #print(n,dep_local.shape, dep.shape, xprime_blocal.shape, xprime_b.shape, covlocal_local.shape)
+
+        # getkf global solution with model-space localization
+        # HZ^T = hxens * R**-1/2
+        # compute eigenvectors/eigenvalues of HZ^T HZ (C=left SV)
+        # (in Bishop paper HZ is nobs, nanals, here is it nanals, nobs)
+        # normalize so dot product is covariance
+        hxtmp = (hxprime_bmlocal/oberrstd_local)/normfact
+        pa = np.dot(hxtmp,hxtmp.T)
+        #t1 = time.time()
+        evals, evecs = eigh(pa, driver='evd')
+        #t2 = time.time()
+        #print('time in eigh',t2-t1)
+        gamma_inv = np.zeros_like(evals)
+        #evals = np.where(evals > np.finfo(evals.dtype).eps, evals, 0.)
+        #gamma_inv = np.where(evals > np.finfo(evals.dtype).eps, 1./evals, 0.)
+        for n in range(nanals2):
+            if evals[n] > np.finfo(evals.dtype).eps:
+               gamma_inv[n] = 1./evals[n]
+            else:
+               evals[n] = 0. 
+        # gammapI used in calculation of posterior cov in ensemble space
+        gammapI = evals+1.
+        # create HZ^T R**-1/2 
+        shxtmp = hxtmp/oberrstd_local
+        # compute factor to multiply with model space ensemble perturbations
+        # to compute analysis increment (for mean update), save in single precision.
+        # This is the factor C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 (y - HXmean)
+        # in Bishop paper (eqs 10-12).
+        # pa = C (Gamma + I)**-1 C^T (analysis error cov in ensemble space)
+        #    = matmul(evecs/gammapI,transpose(evecs))
+        pa = np.dot(evecs/gammapI[np.newaxis,:],evecs.T)
+        # wts_ensmean = C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 (y - HXmean)
+        # (nanals, nanals) x (nanals,) = (nanals,)
+        # do nanal=1,nanals
+        #    swork1(nanal) = sum(shxtmp(nanal,:)*dep(:))
+        # end do
+        # do nanal=1,nanals
+        #    wts_ensmean(nanal) = sum(pa(nanal,:)*swork1(:))/normfact
+        # end do
+        wts_ensmean = np.dot(pa, np.dot(shxtmp,dep_local))/normfact
+        # compute factor to multiply with model space ensemble perturbations
+        # to compute analysis increment (for perturbation update), save in single precision.
+        # This is -C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T (HZ)^T R**-1/2 HXprime
+        # in Bishop paper (eqn 29).
+        # For DEnKF factor is -0.5*C (Gamma + I)**-1 C^T (HZ)^ T R**-1/2 HXprime
+        # = -0.5 Pa (HZ)^ T R**-1/2 HXprime (Pa already computed)
+        # pa = C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T
+        # gammapI = sqrt(1.0/gammapI)
+        # do nanal=1,nanals
+        #    swork3(nanal,:) = &
+        #    evecs(nanal,:)*(1.-gammapI(:))*gamma_inv(:)
+        # enddo
+        # pa = matmul(swork3,transpose(swork2))
+        if denkf:
+            pa=0.5*pa # for denkf
+        else:
+            pa=np.dot(evecs*(1.-np.sqrt(1./gammapI[np.newaxis,:]))*gamma_inv[np.newaxis,:],evecs.T)
+        # wts_ensperts = -C [ (I - (Gamma+I)**-1/2)*Gamma**-1 ] C^T (HZ)^T R**-1/2 HXprime
+        # (nanals, nanals) x (nanals, nanals/eigv) = (nanals, nanals/neigv)
+        # if denkf, wts_ensperts = -0.5 C (Gamma + I)**-1 C^T (HZ)^T R**-1/2 HXprime
+        # swork2 = matmul(shxtmp,transpose(hxens_orig))
+        #wts_ensperts = -matmul(pa, swork2)/normfact
+        wts_ensperts = -np.dot(pa, np.dot(shxtmp,hxprime_b.T)).T/normfact
+        #xensmean_a = np.empty_like(xensmean_b)
+        #xprime_a = np.empty_like(xprime_b)
+        #for k in range(xprime_bm.shape[1]):
+        #    # increments constructed from weighted modulated ensemble member prior perts.
+        #    xensmean_a[k,n] = xensmean_b[k,n] + np.dot(wts_ensmean,xprime_bmlocal[:,k,n])
+        #    xprime_a[:,k,n] = xprime_b[:,k,n] + np.dot(wts_ensperts,xprime_bmlocal[:,k,n])
+    t2 = time.time()
+    print(t2-t1)
+    raise SystemExit
+
+        #if not n_jobs:
+        #    for n in range(Ntsq):
+        #        wts[n],wtsmean[n] = lgetkfwts_kernel2(hxens,obs,oberrs,covlocal[:,n])
+        #else:
+        #    # use joblib to distribute over n_jobs tasks
+        #    results = Parallel(n_jobs=n_jobs)(delayed(letkfwts_kernel2)(hxens,obs,oberrs,covlocal[:,n]) for n in range(ndim))
+        #    for n in range(ndim):
+        #         wts[n],wtsmean[n] = results[n]
+        #return wts,wtsmean
